@@ -15,14 +15,15 @@ dependencies it computes a canonical cover and applies the 3NF decomposition alg
 tables that are in third normal form, preserve the dependencies and have a lossless join. QLens then
 creates these tables with primary keys, foreign keys and \code{UNIQUE} constraints, copies the data into
 them inside a single transaction, and keeps the result only if joining the new tables back together
-gives exactly the original rows. Afterwards the user can query the new database with SQL, run safely
-by a restricted, read-only database user.
+gives exactly the original rows. Afterwards the user can browse and edit the new tables, where the
+database's constraints reject bad changes and a trigger records every change, and can run SQL as a
+restricted database user.
 
 QLens stores its own data in a normalized PostgreSQL schema that uses most topics of the course:
 an ER model converted to relational tables, keys and integrity constraints, views, triggers, cursors,
 stored functions, indexes, transactions and GRANT-based access control. On the sample fee register
 (3{,}000 rows) QLens finds every planted error and produces the expected four tables (students,
-batches, teachers and fee records), and rebuilds all 3{,}000 rows exactly. 302 backend and 63 frontend
+batches, teachers and fee records), and rebuilds all 3{,}000 rows exactly. 496 backend and 204 frontend
 automated tests pass.
 
 \medskip

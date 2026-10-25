@@ -26,6 +26,7 @@
   \node[ent=lane3] (QR) at (1.9, -12.2) {\E{Query Run}{\underline{id}, status, duration}};
   \node[ent=lane2] (P)  at (7.6, -7.6)  {\E{Schema Proposal}{\underline{id}, status, lossless\_ok}};
   \node[ent=lane2] (PT) at (7.6, -12.2) {\E{Proposed Table}{\underline{id}, name, kind}};
+  \node[ent=lane6] (AC) at (1.9, -16.6) {\E{Assistant Conversation}{\underline{id}, title}};
   \node[ent=lane2] (PC) at (7.6, -16.6) {\E{Proposed Column}{\underline{id}, name, role}};
 
   % ---------------- relationship sets ----------------------------------------------------------
@@ -43,6 +44,7 @@
   \node[rel] (prop)   at (7.6, -5.4)  {proposes};
   \node[rel] (contains) at (7.6,-9.9) {contains};
   \node[rel] (hasPC)  at (7.6, -14.4) {has};
+  \node[rel] (makes)  at (1.9, -14.4) {makes};
   \node[rel] (refs)   at (10.4,-14.4) {refers\\[-2pt]to};
 
   % ---------------- lines with cardinalities ---------------------------------------------------
@@ -74,6 +76,8 @@
   \draw[ln] (contains) -- (PT) node[card, pos=0.7, right] {N};
   \draw[ln] (PT) -- (hasPC) node[card, pos=0.3, right] {1};
   \draw[ln] (hasPC) -- (PC) node[card, pos=0.7, right] {N};
+  \draw[ln] (AC) -- (makes) node[card, pos=0.3, right] {1};
+  \draw[ln] (makes) -- (QR) node[card, pos=0.7, right] {N};
   \draw[ln] (PC.east) -| (refs) node[card, pos=0.3, above] {N};
   \draw[ln] (refs) |- (PT.east) node[card, pos=0.75, above] {1};
 \end{tikzpicture}}

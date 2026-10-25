@@ -11,7 +11,7 @@
   ]
   \node[tier=lane0, minimum height=1.6cm] (ui) at (0,0)
     {\textbf{1. Browser (user interface)}\\[2pt]
-     React web pages: Import, Analyze, Design, Query, History};
+     React web pages: Import, Analyze, Design, Data, History};
   \node[tier=lane1, minimum height=1.6cm] (app) at (0,-3.0)
     {\textbf{2. Application server (FastAPI, Python)}\\[2pt]
      receives requests, runs the analysis, builds the design, sends SQL to the database};
@@ -24,7 +24,7 @@
   \draw[arr] ([xshift=-3.05cm]app.south) -- (meta.north)
     node[lab, midway, left=3pt, align=right] {SQL as the owner\\ user \code{qlens\_app}};
   \draw[arr] ([xshift=3.05cm]app.south) -- (ws.north)
-    node[lab, midway, right=3pt] {user queries as a restricted,\\ read-only user \code{qlens\_ws\_<id>}};
+    node[lab, midway, right=3pt] {user SQL as a restricted\\ user \code{qlens\_ws\_<id>}};
 \end{tikzpicture}
 \caption[System architecture]{Three-tier architecture of QLens. The application talks to PostgreSQL as
 two different database users: the owner for its own work, and a restricted read-only user (one per

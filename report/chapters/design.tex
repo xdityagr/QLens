@@ -35,8 +35,9 @@ QLens has three tiers (\cref{fig:architecture}):
 \end{enumerate}
 
 The application uses two database users. The owner user \code{qlens\_app} does QLens's own work. For
-every workspace there is also a restricted user \code{qlens\_ws\_<id>} that may only \emph{read} that
-workspace's schemas; all queries typed by people run as this user (\cref{sec:design-sandbox}).
+every workspace there is also a restricted user \code{qlens\_ws\_<id>} that may read that
+workspace's schemas and change only its generated tables; all SQL typed by people runs as this user
+(\cref{sec:design-sandbox}).
 
 \section{Detailed Design Methodologies}
 \label{sec:detailed}
@@ -55,7 +56,9 @@ relationships, because one dependency can have several columns on its left-hand 
 column can appear in many dependencies. A dataset gets \emph{Schema Proposals} (designs), which contain
 \emph{Proposed Tables} and \emph{Proposed Columns}; a proposed column may refer to another proposed table
 (it becomes a foreign key). On the query side, a workspace has \emph{Saved Queries} and \emph{Query
-Runs}, and a \emph{Row Change} log of edits made in the Data screen (\stwip). Some attributes are
+Runs}, and a \emph{Row Change} log of every edit made to the generated tables. An \emph{Assistant
+Conversation} stands for the assistant's three tables (conversations, messages and the tool calls, which
+may run queries). Some attributes are
 \emph{derived attributes}: for example a dependency's \code{is\_exact} is derived from
 \code{violating\_rows = 0}, and PostgreSQL computes it automatically.
 
@@ -97,12 +100,12 @@ The ER diagram was converted into tables with the standard rules \cite{silbersch
 \rel{duplicate\_groups}{\rk{id}, \rf{dataset\_id}, \rf{column\_id}, canonical\_value, confidence, max\_similarity, status}
 \rel{duplicate\_values}{\rk{\rf{group\_id}, value}, row\_count}
 \rel{dataset\_fixes}{\rk{id}, \rf{dataset\_id}, kind, \rf{column\_id}, from\_value, to\_value, rows\_affected, created\_at}
-\textsf{\textbf{Data screen (\stwip)}}\par\smallskip
+\textsf{\textbf{Data page}}\par\smallskip
 \rel{row\_changes}{\rk{id}, \rf{workspace\_id}, table\_name, op, row\_pk, before, after, changed\_at}
 \end{minipage}\hfill
 \begin{minipage}[t]{0.49\linewidth}\raggedright
 \textsf{\textbf{Proposed designs}}\par\smallskip
-\rel{schema\_proposals}{\rk{id}, \rf{dataset\_id}, \rf{based\_on\_id}, status, created\_at, applied\_at, lossless\_ok, staging\_rows, reconstructed\_rows, mismatch\_rows}
+\rel{schema\_proposals}{\rk{id}, \rf{dataset\_id}, \rf{based\_on\_id}, status, created\_at, applied\_at, lossless\_ok, staging\_rows, reconstructed\_rows, mismatch\_rows, fd\_changes}
 \rel{proposed\_tables}{\rk{id}, \rf{proposal\_id}, ordinal, name, kind, color\_index, explanation}
 \rel{proposed\_columns}{\rk{id}, \rf{table\_id}, ordinal, name, \rf{source\_column\_id}, data\_type, role, not\_null, \rf{references\_table\_id}}
 \rel{proposed\_unique\_keys}{\rk{id}, \rf{table\_id}, is\_primary\_natural}
@@ -196,37 +199,25 @@ the tables are in 3NF (and in BCNF, because every determinant is a key). Two poi
 \textbf{Topic} & \textbf{Use in QLens} \\
 \midrule
 DDL & \code{CREATE TABLE} with keys and constraints for the \code{qlens} schema and for every generated design; \code{CREATE SCHEMA}, \code{DROP SCHEMA} per workspace \\
-DML & \code{COPY}/\code{INSERT} to import; \code{UPDATE} to fix data; \code{INSERT \dots{} SELECT DISTINCT} to fill the new tables \\
-DCL & \code{CREATE ROLE}, \code{GRANT USAGE}, \code{GRANT SELECT}, \code{ALTER DEFAULT PRIVILEGES} for each workspace user \\
+DML & \code{COPY}/\code{INSERT} to import; \code{UPDATE} to fix data; \code{INSERT \dots{} SELECT DISTINCT} to fill the new tables; \code{INSERT}, \code{UPDATE}, \code{DELETE} from the Data page (forms and SQL tab) \\
+DCL & \code{CREATE ROLE} per workspace; \code{GRANT SELECT} on its schemas and \code{GRANT INSERT, UPDATE, DELETE} only on the generated tables; \code{REVOKE EXECUTE} on the audit function \\
 Joins & rebuilding the original sheet from the new tables; reading each dependency together with its columns \\
 Subqueries & the lossless-join check (\cref{lst:lossless}); counting distinct values \\
 Views & \code{v\_workspace\_summary} (dashboard), \code{v\_slow\_queries} (history page) \\
 Aggregation & \code{count}, \code{count(DISTINCT \dots)}, \code{sum}, \code{max} with \code{GROUP BY} to find dependencies and keys \\
-Triggers & keep \code{updated\_at} current; update saved-query statistics (\cref{lst:trigger}); log row changes (\stwip) \\
-Cursors & the query screen fetches results through \code{DECLARE \dots{} CURSOR} and \code{FETCH} (\cref{lst:cursor}) \\
+Triggers & record every row change on the generated tables (\cref{lst:audit}); keep \code{updated\_at} current; update saved-query statistics \\
+Cursors & the SQL tab fetches results through \code{DECLARE \dots{} CURSOR} and \code{FETCH} (\cref{lst:cursor}) \\
 Stored procedures & PL/pgSQL functions \code{check\_fd}, \code{is\_unique} and \code{try\_date} \\
-Indexing & B-tree indexes on foreign keys and on \code{(workspace\_id, created\_at)} for the history page \\
-Transactions & import, every fix and apply are single transactions with \code{ROLLBACK} on failure \\
+Indexing & B-tree indexes on foreign keys and on \code{(workspace\_id, created\_at)}; ``Explain \& speed up'' measures a new index \\
+Transactions & import, every fix, apply and every change on the Data page are single transactions with \code{ROLLBACK} on failure \\
+Relational algebra & ``Step through'' shows a query as join, selection, grouping and projection steps \\
 \bottomrule
 \end{tabularx}
 \end{table}
 
-\paragraph{Trigger.} After a successful run of a saved query is inserted into \code{query\_runs}, this
-trigger updates the saved query's counters:
-
-\begin{lstlisting}[float=tbp,caption={[Trigger]Trigger that updates a saved query after each successful run},label={lst:trigger}]
-CREATE FUNCTION qlens.record_query_run() RETURNS trigger LANGUAGE plpgsql AS $$
-BEGIN
-    UPDATE qlens.saved_queries
-       SET run_count = run_count + 1, last_run_at = NEW.created_at,
-           last_duration_ms = NEW.duration_ms
-     WHERE id = NEW.saved_query_id;
-    RETURN NULL;
-END $$;
-CREATE TRIGGER query_runs_record AFTER INSERT ON qlens.query_runs
-    FOR EACH ROW WHEN (NEW.saved_query_id IS NOT NULL AND NEW.status = 'ok')
-    EXECUTE FUNCTION qlens.record_query_run();
-\end{lstlisting}
+\paragraph{Triggers.} QLens uses three triggers: one keeps \code{updated\_at} current, one updates a
+saved query's run count after each successful run, and one records every change to the generated tables
+(\cref{lst:audit} in \cref{sec:design-sandbox}).
 
 \paragraph{Stored function.} \code{check\_fd} tests whether a functional dependency $X \rightarrow A$
 holds in a table. It groups the rows by $X$ and $A$, and counts how many rows would have to change for
@@ -369,7 +360,7 @@ SELECT DISTINCT s.teacher, s.teacher_phone FROM ws_20_src._staging s ORDER BY 1,
 \code{ON DELETE RESTRICT} stops a student from being deleted while fee records still refer to them.
 
 \paragraph{Example queries.} \Cref{lst:examples} shows queries a user can run on the new tables in the
-Query screen. On the sample they return 19 students who did not pay for October, 6 batches with more
+SQL tab of the Data page. On the sample they return 19 students who did not pay for October, 6 batches with more
 than 25 unpaid months (the first is JEE Evening of Mr.\ Gupta, with Rs.~12{,}75{,}800 collected) and 124
 students who never missed a payment.
 
@@ -393,26 +384,76 @@ WHERE NOT EXISTS (SELECT 1 FROM fee_register f
                   WHERE f.student_id = s.id AND f.fee_paid = 0);
 \end{lstlisting}
 
-\subsection{Query Screen and Security}
+\subsection{The Data Page and Security}
 \label{sec:design-sandbox}
+
+After a design is applied, the \textbf{Data} page lets the user work with the new tables. It has three
+tabs.
+
+\paragraph{Browse.} The user adds, edits and deletes rows through forms, filters rows, follows foreign
+keys to related records and exports a table as CSV. QLens does not check the rules itself: the database's
+constraints (\code{PRIMARY KEY}, \code{UNIQUE}, \code{FOREIGN KEY}, \code{NOT NULL}, \code{CHECK}) reject a
+bad change, and the page names the rule that was broken (\cref{fig:ui-constraint}). Every change is
+recorded by a row-level trigger (\cref{lst:audit}): after each \code{INSERT}, \code{UPDATE} or
+\code{DELETE} on a generated table it stores the old and new row in \code{qlens.row\_changes}, so the page
+can show a history of edits.
+
+\begin{lstlisting}[float=tbp,caption={[Audit trigger]Row-level trigger function that records every change to a generated table},label={lst:audit}]
+CREATE FUNCTION qlens.log_row_change() RETURNS trigger LANGUAGE plpgsql AS $$
+DECLARE
+    ws_id   bigint := substring(TG_TABLE_SCHEMA FROM '^ws_([0-9]+)$')::bigint;
+    old_row jsonb;
+    new_row jsonb;
+BEGIN
+    IF ws_id IS NULL THEN RETURN NULL; END IF;
+    IF TG_OP IN ('UPDATE', 'DELETE') THEN old_row := to_jsonb(OLD); END IF;
+    IF TG_OP IN ('INSERT', 'UPDATE') THEN new_row := to_jsonb(NEW); END IF;
+    INSERT INTO qlens.row_changes (workspace_id, table_name, op, row_pk, before, after)
+    VALUES (ws_id, TG_TABLE_NAME, TG_OP,
+            (coalesce(new_row, old_row) ->> 'id')::bigint, old_row, new_row);
+    RETURN NULL;
+END $$;
+-- attached to every generated table when a design is applied:
+CREATE TRIGGER log_row_change AFTER INSERT OR UPDATE OR DELETE ON ws_20.students
+    FOR EACH ROW EXECUTE FUNCTION qlens.log_row_change();
+\end{lstlisting}
+
+\paragraph{SQL.} The user can type SQL. A \code{SELECT} runs read-only; an \code{INSERT}, \code{UPDATE} or
+\code{DELETE} runs only after the user confirms it, as one transaction. Two extra views explain a query:
+\begin{itemize}
+  \item \textbf{Step through} shows the query evaluated in relational-algebra order: join, selection
+  (\code{WHERE}), grouping, \code{HAVING}, projection and \code{ORDER BY}, with the number of rows after
+  each step. For ``batches with more than 5 unpaid months'' the counts are 3{,}000 $\rightarrow$ 255
+  $\rightarrow$ 8 $\rightarrow$ 3 (\cref{fig:ui-step}).
+  \item \textbf{Explain \& speed up} shows how PostgreSQL executes the query (for example a sequential scan
+  of every row versus an index scan), creates a B-tree index on a copy of the tables and measures how much
+  faster the query becomes.
+\end{itemize}
+
+\paragraph{Ask AI.} The user can ask a question in plain English. An optional assistant (Gemini) answers
+by calling read-only tools that run SQL, and shows the SQL it used. On the Design screen the same assistant
+can rename tables and accept or reject dependencies; each such action is checked with SQL first and can
+be undone.
 
 \InputIfFileExists{figures/sequence-query}{}{}
 
-Users can type any SQL, so the query screen has to be safe. QLens uses database security (DCL) for
-this:
+\paragraph{Security with DCL.} Users can type any SQL, so the SQL tab must be safe. QLens uses the
+database's own security:
 \begin{enumerate}
   \item When a workspace is created, QLens runs \code{CREATE ROLE qlens\_ws\_<id> LOGIN \dots{}} and grants
-  it only \code{USAGE} and \code{SELECT} on that workspace's schemas. It gets nothing on \code{qlens} or on
-  other workspaces, so \code{SELECT * FROM qlens.users} fails with ``permission denied''.
-  \item The role's default is a read-only transaction with a 5-second statement time limit.
+  it \code{USAGE} on the workspace's schemas, \code{SELECT} on their tables, and \code{INSERT},
+  \code{UPDATE}, \code{DELETE} only on the generated tables. It gets nothing on \code{qlens} or on other
+  workspaces, so \code{SELECT * FROM qlens.users} fails with ``permission denied''.
+  \item The role's default is a read-only transaction with a 5-second statement time limit; a confirmed
+  change opens a read-write transaction for that one statement.
   \item Before running, QLens checks with the PostgreSQL parser (pglast) that the text is exactly one
-  \code{SELECT}.
-  \item The query runs through a \emph{cursor}, which returns rows a few at a time. QLens fetches 1{,}001
-  rows: if the 1{,}001st exists, the result is marked as cut at 1{,}000 rows.
-  \item Every run, successful or not, is stored in \code{query\_runs}.
+  statement of an allowed kind.
+  \item A \code{SELECT} runs through a \emph{cursor}, which returns rows a few at a time (\cref{lst:cursor}).
+  QLens fetches 1{,}001 rows: if the 1{,}001st exists, the result is marked as cut at 1{,}000 rows.
+  \item Every run, successful or not, is stored in \code{query\_runs} and shown on the History page.
 \end{enumerate}
 
-\begin{lstlisting}[float=tbp,caption={[Cursor in the query screen]Statements the query screen runs as the restricted user},label={lst:cursor}]
+\begin{lstlisting}[float=tbp,caption={[Cursor in the SQL tab]Statements the SQL tab runs for a SELECT, as the workspace's restricted user},label={lst:cursor}]
 BEGIN READ ONLY;
 SELECT set_config('statement_timeout', '5000', true);
 DECLARE qlens_run NO SCROLL CURSOR WITHOUT HOLD FOR <the user's SELECT>;
@@ -423,21 +464,16 @@ ROLLBACK;
 \subsection{User Interface}
 \label{sec:design-ui}
 
-The screens follow the steps of \cref{fig:pipeline}. Each generated table keeps one colour on every
-screen. \Cref{fig:ui-import,fig:ui-analyze,fig:ui-design,fig:ui-applied,fig:ui-query} show the main
-screens with the fee register.
+The app has five steps: Import, Analyze, Design, Data and History. Each generated table keeps one colour
+on every screen. \Cref{fig:ui-analyze,fig:ui-design,fig:ui-browse,fig:ui-constraint,fig:ui-step} show the
+main screens with the fee register; more are in the appendix.
 
 \newcommand{\uishot}[4]{%
   \begin{figure}[htbp]\centering
   \IfFileExists{screenshots/#1.png}{\fcolorbox{rule}{white}{\includegraphics[width=0.985\textwidth,keepaspectratio]{screenshots/#1.png}}}{}
   \caption[#3]{#4}\label{fig:ui-#2}\end{figure}}
-\uishot{import-crop}{import}{Import screen}{Import screen: each column with its data type, empty values, distinct values and common values.}
 \uishot{analyze-crop}{analyze}{Analyze screen}{Analyze screen: the row identity (candidate key) and the dependencies between columns; dashed arrows hold except on a few rows.}
 \uishot{design-erd-dark}{design}{Design screen}{Design screen: the proposed tables with primary and foreign keys, and the reason for each table.}
-\uishot{design-applied-dark}{applied}{Design screen after Apply}{After Apply: the tables exist and the lossless-join check passed (3{,}000 rows rebuilt exactly). Here the user had renamed \code{students} to \code{learners}.}
-\uishot{query-dark}{query}{Query screen}{Query screen: a join with \code{GROUP BY} on the new tables, run by the read-only user.}
-
-\paragraph{Assistant.} \stwip{} An optional assistant (Gemini) can answer questions about the design and
-change the draft design, but only through checked actions such as renaming a table or accepting a
-dependency; each action is validated with SQL (for example with \code{check\_fd}) before it is applied,
-and every change can be undone. Its backend is built and its screen is being finished.
+\uishot{data-browse-dark}{browse}{Data page: Browse}{Data page, Browse tab: rows of the new tables with their foreign keys, and the history of changes recorded by the trigger.}
+\uishot{data-constraint-dark}{constraint}{Data page: a constraint error}{Deleting a student who still has fee records: the \code{FOREIGN KEY} constraint (\code{ON DELETE RESTRICT}) refuses the change and the page explains why.}
+\uishot{stepthrough-crop}{step}{Step through}{Step through: the query evaluated in relational-algebra order, with the number of rows after each step.}

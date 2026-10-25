@@ -10,7 +10,7 @@ faulty rows are found and the expected four tables rebuild all 3{,}000 rows exac
 
 QLens's own data is also a normalized relational design, built from an ER model, with primary and
 foreign keys, \code{CHECK} and \code{UNIQUE} constraints, views, triggers, stored functions, a cursor,
-B-tree indexes, transactions and \code{GRANT}-based security. 302 backend and 63 frontend tests pass.
+B-tree indexes, transactions and \code{GRANT}-based security. 496 backend and 204 frontend tests pass.
 
 \paragraph{What we learnt.}
 \begin{itemize}
@@ -27,5 +27,5 @@ B-tree indexes, transactions and \code{GRANT}-based security. 302 backend and 63
 keys with at most three columns; one sheet is normalized at a time and only up to 3NF; and the results
 come from sample data, not a study with real users.
 
-\paragraph{Future work.} Finish the Data screen, the performance lab and the assistant's screen; support
-several sheets at once; and detect multivalued dependencies for 4NF.
+\paragraph{Future work.} Support several sheets at once, detect multivalued dependencies for 4NF, and
+suggest indexes automatically from the query history.

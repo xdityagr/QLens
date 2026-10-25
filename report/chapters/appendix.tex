@@ -21,6 +21,6 @@ Hostel mess & 2{,}520 & 60 students $\times$ 14 days $\times$ 3 meals & a warden
   \begin{figure}[htbp]\centering
   \IfFileExists{screenshots/#1.png}{\fcolorbox{rule}{white}{\includegraphics[width=0.985\textwidth,keepaspectratio]{screenshots/#1.png}}}{}
   \caption[#2]{#3}\label{fig:app-#1}\end{figure}}
-\appshot{landing-hero}{Landing page}{Landing page.}
-\appshot{dashboard-dark}{Dashboard}{Dashboard: the user's workspaces and the sample sheets.}
-\appshot{history-crop}{History}{History: every query run, with its status, time and row count.}
+\appshot{data-sql-dark}{Data page: SQL}{Data page, SQL tab: a join with \code{GROUP BY} on the new tables, run by the restricted database user.}
+\appshot{perf-index-dark}{Explain and speed up}{Explain \& speed up: the same query with and without a B-tree index on \code{fee\_register(fee\_paid)}.}
+\appshot{data-ask-crop}{Ask AI}{Ask AI: a question in plain English, answered with the SQL that was run.}

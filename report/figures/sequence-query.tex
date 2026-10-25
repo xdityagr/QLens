@@ -26,7 +26,7 @@
   \foreach \y/\i in {-1.3/1, -2.45/2, -3.4/3, -4.3/4, -5.2/5, -6.2/6, -7.4/7}
     \node[num] at (-0.6,\y) {\i};
 \end{tikzpicture}}
-\caption[Running a query]{Running a query typed by the user. The query is executed through a cursor by a
+\caption[Running a query]{Running a \code{SELECT} typed in the SQL tab. The query is executed through a cursor by a
 restricted, read-only database user, and every run is recorded in the \code{qlens} schema.}
 \label{fig:seq-query}
 \end{figure}

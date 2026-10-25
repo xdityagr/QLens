@@ -59,13 +59,14 @@ foreign keys, copies the data, and checks that no row was lost. The \textbf{obje
   \item Import of one CSV or Excel sheet per workspace (up to 100{,}000 rows and 60 columns).
   \item Finding functional dependencies and candidate keys, and fixing data errors.
   \item Designing 3NF tables, creating them and loading the data in one transaction.
-  \item A read-only SQL query screen with a history of every query.
+  \item A Data page to browse and edit the new tables, run SQL (with a step-by-step view and index
+  timing) and ask questions in plain English; a history of every query.
   \item Three sample sheets with known errors: a coaching fee register, a grocery (kirana) shop's sales
   and a hostel mess register.
 \end{itemize}
 
-\paragraph{Out of scope.} Other database systems, several sheets at once, normal forms beyond 3NF
-(4NF and 5NF), and changing data from the query screen. QLens runs on one computer with its own
+\paragraph{Out of scope.} Other database systems, several sheets at once, and normal forms beyond 3NF
+(4NF and 5NF). QLens runs on one computer with its own
 PostgreSQL 18 server.
 
 \paragraph{Status.} Each feature is marked \stdone{} (finished and tested), \stwip{} (partly done) or

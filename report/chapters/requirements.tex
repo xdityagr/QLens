@@ -23,10 +23,10 @@ FR-4 & \textbf{Clean-up.} Find similar spellings and conflicting values; let the
 FR-5 & \textbf{3NF design.} Canonical cover, 3NF decomposition, primary and foreign keys, the \code{CREATE TABLE} script. & \stdone \\
 FR-6 & \textbf{Design screen.} Show the design as a diagram; rename tables and columns before applying. & \stdone \\
 FR-7 & \textbf{Apply.} Create and fill the tables in one transaction; keep them only if the lossless-join check passes. & \stdone \\
-FR-8 & \textbf{Query screen.} Run read-only \code{SELECT} queries; save queries; keep a history of runs. & \stdone \\
-FR-9 & \textbf{Data screen.} Add, edit and delete rows in the new tables; show constraint errors; record every change with a trigger. & \stwip \\
-FR-10 & \textbf{Assistant.} Answer questions and edit the draft design only through checked actions (backend built, screen in progress). & \stwip \\
-FR-11 & \textbf{Performance lab.} Compare a query's time with and without an index. & \stwip \\
+FR-8 & \textbf{SQL.} Run \code{SELECT} queries read-only and confirmed \code{INSERT}/\code{UPDATE}/\code{DELETE} as one transaction; save queries; keep a history of runs. & \stdone \\
+FR-9 & \textbf{Browse data.} Add, edit and delete rows through forms; show which constraint rejected a change; record every change with a trigger. & \stdone \\
+FR-10 & \textbf{Ask AI.} Answer questions in plain English with read-only SQL; edit the draft design only through checked, undoable actions. & \stdone \\
+FR-11 & \textbf{Explain a query.} Step through a query in relational-algebra order; compare its time with and without a B-tree index. & \stdone \\
 \bottomrule
 \end{tabularx}
 \end{table}
@@ -65,7 +65,7 @@ NFR-7 & Usability & Results in plain English, light and dark themes. \\
   \item QLens shows keys, dependencies and data problems; the user fixes the problems.
   \item QLens proposes a 3NF design; the user may rename tables or columns.
   \item The user applies the design: the tables are created, filled and checked in one transaction.
-  \item The user queries the new tables in the Query screen.
+  \item The user browses and edits the new tables and queries them with SQL on the Data page.
 \end{enumerate}
 
 \section{Other Software Engineering Methodologies}
@@ -83,7 +83,7 @@ in SQL (\cref{tab:tests}).
 
 \begin{table}[htbp]
 \centering
-\caption[Test summary]{Automated tests (latest full run: 302 backend and 63 frontend tests, all passing).}
+\caption[Test summary]{Automated tests (latest runs: 496 backend and 204 frontend tests passing).}
 \label{tab:tests}
 \small
 \begin{tabularx}{\textwidth}{@{}l r X@{}}
@@ -95,8 +95,9 @@ Import & 39 & file reading, data types, sample data errors \\
 Keys, dependencies, clean-up & 53 & \code{check\_fd}, \code{is\_unique}, fixes and rollback \\
 Normalization algorithms & 19 & closure, canonical cover, 3NF; 900 random cases checked for 3NF and lossless join \\
 Design and apply & 79 & foreign keys, renames, generated SQL, apply, rollback \\
-Query screen & 73 & only one \code{SELECT}, read-only user, time limit, row limit, run history \\
-Frontend & 63 & screens' data handling and formatting \\
+SQL tab and query runner & 73 & one statement only, read-only user, time limit, row limit, run history \\
+Data page, writes, step-through, explain, assistant & 194 & constraint errors, audit trigger, privileges, timeouts, relational-algebra steps, index timing, assistant tools \\
+Frontend & 204 & screens' data handling and formatting \\
 \bottomrule
 \end{tabularx}
 \end{table}
