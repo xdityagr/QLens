@@ -560,7 +560,7 @@ def test_gemini_429_is_a_429_rate_limited_without_the_sdk_text(client, conn, dra
     assert r.status_code == 429
     err = r.json()["error"]
     assert err["code"] == "assistant_rate_limited" and err["detail"] is None and "SECRET" not in r.text
-    assert "free quota is used up" in err["message"] and "midnight pacific" in err["message"].lower()
+    assert "rate-limited right now" in err["message"] and "about a minute" in err["message"] and "midnight pacific" in err["message"].lower()
     conn.rollback()
     assert conn.execute("SELECT count(*) AS n FROM qlens.assistant_messages").fetchone()["n"] == 0
 

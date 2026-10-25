@@ -173,8 +173,9 @@ def respond(conn: psycopg.Connection, ws_id: int, user_id: int, message: str, co
         # Raised, so the request transaction rolls back: no half-finished turn (or edit) is kept.
         log.warning("assistant model call failed: %s", str(e)[:500])
         if e.rate_limited:
-            raise ApiError(429, "assistant_rate_limited", "Gemini's free quota is used up for now. Try again "
-                           "later (the daily limit resets at midnight Pacific time).") from None
+            raise ApiError(429, "assistant_rate_limited", "Gemini's free tier is rate-limited right now. Wait about a minute and try "
+                           "again — if it keeps happening, today's free quota may be used up (it resets at "
+                           "midnight Pacific time).") from None
         raise ApiError(502, "assistant_upstream_error", "The assistant could not get an answer from Gemini. "
                        "Try again in a moment.") from None
 

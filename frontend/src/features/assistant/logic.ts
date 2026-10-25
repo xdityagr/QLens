@@ -173,7 +173,7 @@ export function editSummary(actions: AssistantAction[], changes: DesignChange[] 
 // ---- errors -----------------------------------------------------------------------------------
 
 export const RATE_LIMITED =
-  "Gemini's free quota is used up for now — try again later (the daily limit resets at midnight Pacific time)."
+  "Gemini's free tier is rate-limited right now. Wait about a minute and try again — if it keeps happening, today's free quota may be used up (it resets at midnight Pacific time)."
 
 export function friendlyError(e: unknown): FriendlyError {
   if (e instanceof ApiError) {
