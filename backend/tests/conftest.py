@@ -162,3 +162,14 @@ def staged_tiny(conn) -> tuple[str, str]:
     conn.execute("CREATE TABLE ws_tiny_src._staging (_row_id bigint PRIMARY KEY, a bigint, b text)")
     conn.execute("INSERT INTO ws_tiny_src._staging VALUES (1, 1, 'x'), (2, 1, 'x'), (3, 1, 'y'), (4, 2, 'z')")
     return "ws_tiny_src", "_staging"
+
+
+@pytest.fixture
+def applied_fee(conn, fee_ws_clean) -> WsHandle:
+    """fee_register cleaned, designed and applied: ws_<id> holds students, batches, teachers, fee_register."""
+    from qlens.design.apply import apply_proposal
+    from qlens.design.proposal import build
+
+    apply_proposal(conn, fee_ws_clean.id, build(conn, fee_ws_clean.dataset_id).id)
+    conn.commit()
+    return fee_ws_clean
