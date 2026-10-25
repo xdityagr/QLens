@@ -1,4 +1,4 @@
-"""The SQL that builds a proposal: tables, data loads, the original_sheet view and the lossless check.
+"""The SQL that builds a proposal: tables, data loads, audit triggers, the original_sheet view and the lossless check.
 
 Nothing here runs the SQL (applying is a separate step). Every identifier is a psycopg sql.Identifier, so
 the executed statements quote everything; as_text prints the same statements quoted only where needed.
@@ -16,6 +16,8 @@ from qlens.design import naming
 from qlens.design.proposal import VIEW_NAME, ProposalOut, ProposedColumnOut, TableOut
 
 _TYPES = {"bigint", "numeric", "boolean", "date", "text"}
+# Name of both the trigger on each generated table and the function it runs.
+AUDIT_TRIGGER = "log_row_change"
 
 
 class _ID(sql.Identifier):
@@ -29,7 +31,7 @@ class _ID(sql.Identifier):
 
 @dataclass(frozen=True)
 class SqlStep:
-    kind: Literal["schema", "table", "insert", "view", "verify"]
+    kind: Literal["schema", "table", "insert", "trigger", "view", "verify"]
     title: str
     sql: sql.Composed
 
@@ -100,6 +102,13 @@ def _create_table(t: TableOut, main: str, by_id: dict[int, TableOut], names: _Co
         parts.append(sql.SQL("CONSTRAINT {} FOREIGN KEY ({}) REFERENCES {} ({}) ON DELETE RESTRICT").format(
             _ID(names.make(t.name, [c.name], "fkey")), _ID(c.name), _ID(main, ref.name), _ID(_pk(ref))))
     return sql.SQL("CREATE TABLE {} (\n    {}\n)").format(_ID(main, t.name), sql.SQL(",\n    ").join(parts))
+
+
+def _audit_trigger(t: TableOut, main: str) -> sql.Composed:
+    """Every later INSERT/UPDATE/DELETE on the table is logged to qlens.row_changes (migration 006)."""
+    return sql.SQL("CREATE TRIGGER {} AFTER INSERT OR UPDATE OR DELETE ON {}\n"
+                   "FOR EACH ROW EXECUTE FUNCTION {}()").format(
+        _ID(AUDIT_TRIGGER), _ID(main, t.name), _ID("qlens", AUDIT_TRIGGER))
 
 
 def _same(table: str, c: ProposedColumnOut, other: sql.Composable) -> sql.Composed:
@@ -233,6 +242,8 @@ def render(proposal: ProposalOut, ws_id: int) -> list[SqlStep]:
         SqlStep("schema", f"Create schema {main}", sql.SQL("CREATE SCHEMA IF NOT EXISTS {}").format(_ID(main))),
         *[SqlStep("table", f"Create table {t.name}", _create_table(t, main, by_id, names)) for t in order],
         *[SqlStep("insert", f"Load {t.name}", _load(t, main, src, by_id)) for t in order],
+        # Only after the loads: copying the sheet in is not an edit, so it must not flood the audit log.
+        *[SqlStep("trigger", f"Audit changes to {t.name}", _audit_trigger(t, main)) for t in order],
         SqlStep("view", f"Create view {VIEW_NAME}", _view(proposal, main)),
         SqlStep("verify", "Check that the original sheet comes back unchanged", _verify(proposal, main, src)),
     ]

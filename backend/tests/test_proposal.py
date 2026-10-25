@@ -137,8 +137,7 @@ def test_hostel_and_kirana_proposals(conn, hostel_ws, kirana_ws):
 def test_sql_text_is_quoted(conn, fee_ws_clean):
     p = build(conn, fee_ws_clean.dataset_id)
     steps = ddl.render(p, fee_ws_clean.id)
-    assert [s.kind for s in steps] == ["schema", "table", "table", "table", "table",
-                                       "insert", "insert", "insert", "insert", "view", "verify"]
+    assert [s.kind for s in steps] == ["schema", *["table"] * 4, *["insert"] * 4, *["trigger"] * 4, "view", "verify"]
     # Referenced tables are created and loaded before the tables that point at them.
     created = [s.title.split()[-1] for s in steps if s.kind == "table"]
     assert created == ["teachers", "batches", "students", "fee_register"]
