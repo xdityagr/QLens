@@ -31,7 +31,7 @@ export interface SqlAssistantProps {
 const INTRO: Record<SqlAssistantProps["context"], string> = {
   query:
     "Ask about the rows in your tables. I can write a SELECT, run it read-only and show what came back; Insert into editor puts the SQL in the editor as a new query.",
-  data: "Ask about the rows in your tables in plain English. The assistant writes one SELECT, runs it as this workspace's read-only database role, and answers with the rows and the SQL it used. It never changes your data; Open in SQL tab puts the SQL in the editor.",
+  data: "Ask about the rows in your tables in plain English. The assistant writes one SELECT, runs it as this workspace's read-only database role, and answers with the rows and the SQL it used. It never changes your data. Open in SQL tab puts the SQL in the editor.",
 }
 
 /**
