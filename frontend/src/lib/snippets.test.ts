@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vitest"
-import { starterSnippets, type SnippetTable } from "./snippets"
+import { starterQuestions, starterSnippets, type SnippetTable } from "./snippets"
 
 const pk = { name: "id", data_type: "bigint", is_pk: true, fk: null }
 const col = (name: string, data_type = "text") => ({ name, data_type, is_pk: false, fk: null })
@@ -127,5 +127,33 @@ describe("other shapes", () => {
     expect(starterSnippets(t)[0].sql).toBe(
       "SELECT s.*, s2.shop\nFROM sales s\nJOIN shops s2 ON s2.id = s.shop_id\nLIMIT 50;",
     )
+  })
+})
+
+describe("starterQuestions", () => {
+  test("plain-English questions about the fee_register data", () => {
+    expect(starterQuestions(FEES)).toEqual([
+      "Which students have a fee_paid of 0 in the most recent month?",
+      "Which batch has the highest total fee_paid?",
+      "Who are the top 5 students by total fee_paid?",
+      "Which students have no fee_register rows?",
+      "How many rows does each table have?",
+    ])
+  })
+
+  test("without a number column it counts rows; without foreign keys it stays general", () => {
+    const t = FEES.map((x) =>
+      x.name === "fee_register" ? { ...x, columns: x.columns.filter((c) => c.name !== "fee_paid") } : x,
+    )
+    expect(starterQuestions(t)).toEqual([
+      "Which batch has the most fee_register rows?",
+      "Which students have no fee_register rows?",
+      "How many rows does each table have?",
+    ])
+    expect(starterQuestions([{ name: "items", row_count: 5, columns: [pk, col("item")] }])).toEqual([
+      "How many rows does each table have?",
+      "Show 10 rows of items",
+    ])
+    expect(starterQuestions([])).toEqual([])
   })
 })

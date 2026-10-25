@@ -4,6 +4,7 @@ import { TextCursorInput } from "lucide-react"
 import { useCallback, useMemo, useRef } from "react"
 import { historyKey, slowKey } from "../query/queries"
 import type { AssistantReply } from "./api"
+import { AssistantPage } from "./AssistantPage"
 import { AssistantPanel } from "./AssistantPanel"
 import { BarError } from "./BarError"
 import { CommandBar } from "./CommandBar"
@@ -21,12 +22,16 @@ export interface SqlAssistantProps {
   onInsertSql?: (sql: string) => void
   /** the label of that action */
   insertLabel?: string
+  /** sidebar: a bar in the page, answers slide in from the right; page: the whole thread inline, full width */
+  variant?: "sidebar" | "page"
+  /** questions to start from (page variant), e.g. read off the schema */
+  starters?: string[]
 }
 
 const INTRO: Record<SqlAssistantProps["context"], string> = {
   query:
     "Ask about the rows in your tables. I can write a SELECT, run it read-only and show what came back; Insert into editor puts the SQL in the editor as a new query.",
-  data: "Ask about the rows in your tables. I can write a SELECT, run it read-only and show what came back.",
+  data: "Ask about the rows in your tables in plain English. The assistant writes one SELECT, runs it as this workspace's read-only database role, and answers with the rows and the SQL it used. It never changes your data; Open in SQL tab puts the SQL in the editor.",
 }
 
 /**
@@ -39,6 +44,8 @@ export function SqlAssistant({
   tables,
   onInsertSql,
   insertLabel = "Insert into editor",
+  variant = "sidebar",
+  starters,
 }: SqlAssistantProps) {
   const qc = useQueryClient()
   const dockInput = useRef<HTMLInputElement>(null)
@@ -72,7 +79,7 @@ export function SqlAssistant({
         run: (sql) => {
           onInsertSql(sql)
           // narrow screens: the sidebar covers the page, so get out of the way
-          if (window.matchMedia("(max-width: 1023px)").matches) a.setOpen(false)
+          if (variant === "sidebar" && window.matchMedia("(max-width: 1023px)").matches) a.setOpen(false)
         },
       }
     : null
@@ -81,6 +88,31 @@ export function SqlAssistant({
     a.setDraft("")
     void a.ask(text)
   }
+
+  if (variant === "page")
+    return (
+      <AssistantPage
+        a={a}
+        wsId={wsId}
+        laneOf={laneOf}
+        sqlAction={sqlAction}
+        intro={INTRO[context]}
+        starters={starters ?? examples}
+        input={
+          <CommandBar
+            variant="inline"
+            value={a.draft}
+            onChange={a.setDraft}
+            onSubmit={send}
+            pending={a.pending}
+            examples={starters?.length ? starters : examples}
+            hotkey
+            inputRef={inlineInput}
+            label={a.turns.length ? "Ask a follow-up" : "Ask a question about your data"}
+          />
+        }
+      />
+    )
 
   return (
     <>

@@ -9,12 +9,18 @@ import { useCountUp } from "../../lib/reveal"
 import type { StatementInfo } from "../../lib/sqlKind"
 import type { SqlWriteOut } from "./api"
 
-const VERB_TONE: Record<string, string> = { insert: "var(--lane-4)", update: "var(--lane-1)", delete: "var(--danger)" }
+const VERB_TONE: Record<string, string> = {
+  insert: "var(--lane-4)",
+  update: "var(--lane-1)",
+  delete: "var(--danger)",
+  other: "var(--lane-3)",
+}
 const PREP: Record<string, string> = { insert: "into", update: "in", delete: "from" }
 
 /**
- * Asked before any INSERT, UPDATE or DELETE runs: what it will change, and what happens if a row breaks a rule.
- * Enter or the button runs it; Esc or Cancel goes back to the editor.
+ * Asked before anything but a SELECT runs: what it will change, and what happens if a row breaks a rule.
+ * Focus starts on Cancel (the WAI-ARIA alertdialog pattern), so a stray Enter, a second Ctrl+Enter or a held key
+ * cannot run the write; key-repeat Enters are ignored outright. Esc or Cancel goes back to the editor.
  */
 export function ConfirmWrite({
   info,
@@ -29,8 +35,8 @@ export function ConfirmWrite({
   onRun: () => void
   onCancel: () => void
 }) {
-  const runRef = useRef<HTMLButtonElement>(null)
-  useEffect(() => runRef.current?.focus(), [])
+  const cancelRef = useRef<HTMLButtonElement>(null)
+  useEffect(() => cancelRef.current?.focus(), [])
   const verb = info.keyword ?? info.kind.toUpperCase()
   const everyRow = (info.kind === "update" || info.kind === "delete") && !info.hasWhere
   return (
@@ -42,6 +48,9 @@ export function ConfirmWrite({
         if (e.key === "Escape") {
           e.preventDefault()
           onCancel()
+        } else if (e.key === "Enter" && e.repeat) {
+          // a held key is not a decision
+          e.preventDefault()
         }
       }}
       className="dw-confirm relative overflow-hidden rounded-card border bg-raised py-4 pl-5 pr-4"
@@ -54,20 +63,30 @@ export function ConfirmWrite({
       />
       <div className="flex flex-wrap items-start gap-x-5 gap-y-3">
         <div className="min-w-0 flex-1">
-          <p id="write-confirm-title" className="text-[16px] leading-snug text-text">
-            This will{" "}
-            <span className="font-mono text-[14.5px] font-semibold" style={{ color: VERB_TONE[info.kind] }}>
-              {verb}
-            </span>{" "}
-            rows {PREP[info.kind]}{" "}
-            <span className="inline-flex items-center gap-1.5 font-mono text-[14.5px]">
-              {lane !== null && (
-                <span aria-hidden className="size-2 rounded-full" style={{ background: laneVar(lane) }} />
-              )}
-              {info.table ?? "a table"}
-            </span>
-            . Run it?
-          </p>
+          {info.kind === "other" ? (
+            <p id="write-confirm-title" className="text-[16px] leading-snug text-text">
+              This is a{" "}
+              <span className="font-mono text-[14.5px] font-semibold" style={{ color: VERB_TONE.other }}>
+                {verb}
+              </span>{" "}
+              statement, not a plain read. Send it to be checked and run?
+            </p>
+          ) : (
+            <p id="write-confirm-title" className="text-[16px] leading-snug text-text">
+              This will{" "}
+              <span className="font-mono text-[14.5px] font-semibold" style={{ color: VERB_TONE[info.kind] }}>
+                {verb}
+              </span>{" "}
+              rows {PREP[info.kind]}{" "}
+              <span className="inline-flex items-center gap-1.5 font-mono text-[14.5px]">
+                {lane !== null && (
+                  <span aria-hidden className="size-2 rounded-full" style={{ background: laneVar(lane) }} />
+                )}
+                {info.table ?? "a table"}
+              </span>
+              . Run it?
+            </p>
+          )}
           <div id="write-confirm-desc" className="mt-1.5 flex flex-col gap-1 text-[13px] leading-relaxed text-muted">
             {everyRow && (
               <p className="flex items-start gap-1.5 text-text">
@@ -75,18 +94,24 @@ export function ConfirmWrite({
                 There is no WHERE clause, so every row of {info.table ?? "the table"} changes.
               </p>
             )}
-            <p>
-              It runs in one transaction: if any row breaks a constraint, nothing changes. A trigger records every row
-              it does change.
-            </p>
+            {info.kind === "other" ? (
+              <p>
+                Only a single INSERT, UPDATE or DELETE on your design's tables is allowed here; the server refuses
+                anything else and says why.
+              </p>
+            ) : (
+              <p>
+                It runs in one transaction: if any row breaks a constraint, nothing changes. A trigger records every row
+                it does change.
+              </p>
+            )}
           </div>
         </div>
         <div className="flex items-center gap-2 self-center">
-          <Button variant="ghost" size="sm" onClick={onCancel}>
+          <Button ref={cancelRef} variant="ghost" size="sm" onClick={onCancel}>
             Cancel
           </Button>
           <Button
-            ref={runRef}
             variant={info.kind === "delete" ? "danger" : "primary"}
             size="sm"
             loading={running}

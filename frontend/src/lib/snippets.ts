@@ -227,3 +227,35 @@ function singular(name: string): string {
   if (name.endsWith("s") && !name.endsWith("ss")) return name.slice(0, -1)
   return name
 }
+
+/**
+ * Starter questions for the Ask AI tab, read off the same shape as the snippets: the fact table, the table its
+ * first foreign key points at (students), the one beyond (batches), its first number and its period column.
+ */
+export function starterQuestions(tables: SnippetTable[]): string[] {
+  if (!tables.length) return []
+  const byName = new Map(tables.map((t) => [t.name, t]))
+  const refsOf = (t: SnippetTable) =>
+    t.columns.flatMap((c) => (c.fk && byName.has(c.fk.table) && c.fk.table !== t.name ? [byName.get(c.fk.table)!] : []))
+  const fact = [...tables].sort(
+    (a, b) => refsOf(b).length - refsOf(a).length || (b.row_count ?? 0) - (a.row_count ?? 0),
+  )[0]
+  const everyTable = "How many rows does each table have?"
+  const dim = refsOf(fact)[0]
+  if (!dim) return [everyTable, `Show 10 rows of ${fact.name}`]
+  const far = refsOf(dim).find((t) => t !== fact) ?? dim
+  const factCols = fact.columns.filter(plain)
+  const num = factCols.find((c) => NUMBER.test(c.data_type))?.name ?? null
+  const period =
+    factCols.find((c) => c.name !== num && (PERIOD_TYPE.test(c.data_type) || PERIOD_NAME.test(c.name)))?.name ?? null
+  const out: string[] = []
+  if (num && period) out.push(`Which ${dim.name} have a ${num} of 0 in the most recent ${period}?`)
+  out.push(
+    num
+      ? `Which ${singular(far.name)} has the highest total ${num}?`
+      : `Which ${singular(far.name)} has the most ${fact.name} rows?`,
+  )
+  if (num) out.push(`Who are the top 5 ${dim.name} by total ${num}?`)
+  out.push(`Which ${dim.name} have no ${fact.name} rows?`, everyTable)
+  return out
+}

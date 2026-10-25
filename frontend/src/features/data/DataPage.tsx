@@ -9,6 +9,7 @@ import { useQueryClient } from "@tanstack/react-query"
 import { configKey, useAppConfig } from "../../lib/config"
 import { fmtInt } from "../../lib/format"
 import { useAppliedSchema } from "../../lib/schema"
+import { starterQuestions } from "../../lib/snippets"
 import { useWorkspaceContext } from "../workspaces/context"
 import { StepHeader } from "../workspaces/StepHeader"
 import { BrowseTab } from "./BrowseTab"
@@ -154,13 +155,17 @@ function DataHub({ wsId }: { wsId: number }) {
   )
 }
 
-/** Ask AI: plain-English questions about the rows. The assistant writes a SELECT, runs it read-only and answers. */
+/**
+ * Ask AI: plain-English questions about the rows, answered inline and full width. The assistant writes a SELECT,
+ * runs it read-only and answers with the rows and the SQL, which "Open in SQL tab" hands to the editor.
+ */
 function AskTab({ wsId, onOpenSql }: { wsId: number; onOpenSql: (sql: string) => void }) {
   const config = useAppConfig()
   // useAppConfig reads "off" until the answer arrives; wait for it rather than flash "Ask AI is off"
   const configReady = useQueryClient().getQueryState(configKey)?.status !== "pending"
   const schema = useAppliedSchema(wsId)
   const tables = useMemo(() => schema.data?.tables ?? [], [schema.data])
+  const starters = useMemo(() => starterQuestions(tables), [tables])
 
   if (!configReady || schema.isPending)
     return (
@@ -175,32 +180,16 @@ function AskTab({ wsId, onOpenSql }: { wsId: number; onOpenSql: (sql: string) =>
       </EmptyState>
     )
   return (
-    <div className="grid gap-8 lg:grid-cols-[minmax(0,1fr)_320px]">
-      <div className="min-w-0">
-        <h3 className="text-[17px] font-medium tracking-[-0.01em] text-text">Ask about your data</h3>
-        <p className="mb-5 mt-1 max-w-[62ch] text-[14px] leading-relaxed text-muted">
-          Type a question such as “who hasn’t paid for October?”. The assistant writes a SELECT for your tables, runs it
-          read-only, and answers with the result table and the SQL it used. It never changes your data.
-        </p>
-        <Suspense fallback={<div className="h-[52px]" />}>
-          <SqlAssistant
-            wsId={wsId}
-            context="data"
-            tables={tables}
-            onInsertSql={onOpenSql}
-            insertLabel="Open in SQL tab"
-          />
-        </Suspense>
-      </div>
-      <aside className="rounded-card border border-border bg-surface p-4 text-[13px] leading-relaxed text-muted">
-        <p className="mb-2 text-[13.5px] font-medium text-text">What happens when you ask</p>
-        <ol className="flex list-decimal flex-col gap-1.5 pl-4 marker:text-faint">
-          <li>The assistant reads the table and column names of your design.</li>
-          <li>It writes one SELECT and runs it as this workspace’s read-only database role (5 s limit).</li>
-          <li>The answer opens on the right with the rows and the SQL; the run is listed in History.</li>
-          <li>“Open in SQL tab” copies that SQL into the editor, where you can change and run it yourself.</li>
-        </ol>
-      </aside>
-    </div>
+    <Suspense fallback={<div className="h-[160px]" />}>
+      <SqlAssistant
+        wsId={wsId}
+        context="data"
+        variant="page"
+        tables={tables}
+        starters={starters}
+        onInsertSql={onOpenSql}
+        insertLabel="Open in SQL tab"
+      />
+    </Suspense>
   )
 }

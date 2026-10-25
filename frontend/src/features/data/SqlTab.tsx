@@ -5,7 +5,7 @@ import { Spinner } from "../../components/Spinner"
 import { ApiError } from "../../lib/api"
 import { useAppliedSchema } from "../../lib/schema"
 import { starterSnippets, type Snippet } from "../../lib/snippets"
-import { isWrite, statementInfo, type StatementInfo } from "../../lib/sqlKind"
+import { statementInfo, type StatementInfo } from "../../lib/sqlKind"
 import { locateError, tablesInSql } from "../../lib/sqlText"
 import type { QueryErrorDetail, QueryableTable, SavedQueryOut } from "../query/api"
 import { useRunQuery, useSavedQueries, useSaveQuery, useSourceTables } from "../query/queries"
@@ -176,15 +176,15 @@ export function SqlTab({ wsId, incoming }: { wsId: number; incoming: OpenInEdito
     [writeM, showError],
   )
 
-  // Run: a SELECT runs at once; a write first asks. Anything else goes to the write path, whose checks say why not.
+  // Run: a SELECT runs at once; anything else first asks, then goes to the write path, whose checks say why not.
   const run = useCallback(() => {
     const text = sql
     if (!text.trim() || runM.isPending || writeM.isPending) return
     editor.current?.markError(null)
     if (info.kind === "select" || info.kind === "empty") runSelect(text)
-    else if (isWrite(info.kind)) setConfirming({ sql: text, info })
-    else runWrite(text)
-  }, [sql, info, runM.isPending, writeM.isPending, runSelect, runWrite])
+    // everything else asks first; the server decides what may actually run
+    else setConfirming({ sql: text, info })
+  }, [sql, info, runM.isPending, writeM.isPending, runSelect])
 
   const setSql = (v: string) => {
     setDraft((d) => ({ ...d, sql: v }))
@@ -219,7 +219,8 @@ export function SqlTab({ wsId, incoming }: { wsId: number; incoming: OpenInEdito
       </div>
     )
 
-  const writing = isWrite(info.kind)
+  // anything but a read goes through the confirm card first
+  const writing = info.kind !== "select" && info.kind !== "empty"
   const busy = runM.isPending || writeM.isPending
   // the plan and the step-through are for SELECTs: hidden while the editor holds a write
   const showPanels = outcome?.kind === "ok" && ranSql !== null && !writing
