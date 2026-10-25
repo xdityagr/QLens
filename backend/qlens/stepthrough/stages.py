@@ -2,7 +2,8 @@
 
 FROM/JOIN -> WHERE -> GROUP BY -> HAVING -> SELECT -> DISTINCT -> ORDER BY/LIMIT, in relational-algebra terms:
 join (or product), selection, grouping, selection on groups, projection, duplicate elimination, sort.
-Every stage is a complete, runnable SELECT built from the original's own clauses, so its rows are real.
+Every stage is a complete, runnable SELECT built from the original's own clauses (deparsed by pglast.stream),
+so its rows are real.
 
 Parsing: the statement first passes validate_select (4,000-token cap, iterative JSON walk). The stage SQL needs
 the node tree and pglast's deparser, whose Cython tree builder recurses once per nesting level and kills the
@@ -17,7 +18,7 @@ from typing import Literal
 
 from pglast import ast, parse_sql, parser
 from pglast.enums import LimitOption
-from pglast.stream import RawStream
+from pglast.stream import IndentedStream, RawStream
 from pydantic import BaseModel
 
 from qlens.errors import ApiError
@@ -90,14 +91,21 @@ _WINDOW = ("Window functions (OVER) are computed after grouping, over rows that 
 # ---- building stage SQL from the node tree --------------------------------------------------------
 
 def _sql(node) -> str:
+    """One-line text of an expression, for captions."""
     return RawStream()(node)
+
+
+def _statement(node: ast.SelectStmt) -> str:
+    """A stage's SELECT, one clause per line (IndentedStream is RawStream with layout), so the UI can show and
+    mark the lines each stage adds."""
+    return IndentedStream(compact_lists_margin=60)(node)
 
 
 def _select(base: ast.SelectStmt | None = None, **fields) -> str:
     """Deparse a SELECT made of `base`'s clauses with `fields` replaced (subnodes are shared, never mutated)."""
     attrs = {k: getattr(base, k) for k in ast.SelectStmt.__slots__} if base is not None else {}
     attrs.update(fields)
-    return _sql(ast.SelectStmt(**attrs))
+    return _statement(ast.SelectStmt(**attrs))
 
 
 _STAR = (ast.ResTarget(val=ast.ColumnRef(fields=(ast.A_Star(),))),)
@@ -224,7 +232,7 @@ def _build(stmt: ast.SelectStmt) -> list[StageSql]:
                                clause=", ".join(_sql(d) for d in on)))
     if stmt.sortClause or stmt.limitCount is not None or stmt.limitOffset is not None:
         title, verb = _order_title(stmt)
-        stages.append(StageSql(kind="order_limit", sql=_sql(stmt), title=title, symbol="τ", clause=verb))
+        stages.append(StageSql(kind="order_limit", sql=_statement(stmt), title=title, symbol="τ", clause=verb))
     return stages
 
 

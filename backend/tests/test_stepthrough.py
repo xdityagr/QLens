@@ -34,23 +34,24 @@ def test_distinct_stage_and_no_order_stage():
 
 def test_stage_sql_is_cumulative():
     s = _by_kind(Q)
-    assert s["from"].startswith("SELECT * FROM fee_register AS f INNER JOIN students AS s")
+    # one clause per line, so the UI can mark the lines a stage adds
+    assert s["from"].startswith("SELECT *\nFROM fee_register AS f\n     INNER JOIN students AS s")
     assert "WHERE" not in s["from"]
-    assert s["where"] == s["from"] + " WHERE f.fee_paid = 0"
-    assert s["group_by"].startswith("SELECT b.batch, count(*) AS rows_in_group FROM fee_register")
-    assert s["group_by"].endswith("WHERE f.fee_paid = 0 GROUP BY b.batch")
-    assert s["having"] == s["group_by"] + " HAVING count(*) > 5"
+    assert s["where"] == s["from"] + "\nWHERE f.fee_paid = 0"
+    assert s["group_by"].startswith("SELECT b.batch, count(*) AS rows_in_group\nFROM fee_register")
+    assert s["group_by"].endswith("WHERE f.fee_paid = 0\nGROUP BY b.batch")
+    assert s["having"] == s["group_by"] + "\nHAVING count(*) > 5"
     assert "ORDER BY" not in s["select"] and "LIMIT" not in s["select"]
-    assert s["select"].startswith("SELECT b.batch, count(*) AS unpaid FROM")
-    assert s["order_limit"].endswith("ORDER BY unpaid DESC LIMIT 3")
+    assert s["select"].startswith("SELECT b.batch, count(*) AS unpaid\nFROM")
+    assert s["order_limit"].endswith("ORDER BY unpaid DESC\nLIMIT 3")
 
 
 def test_group_by_ordinal_and_alias_resolve_to_the_select_list():
     s = _by_kind("SELECT batch_id AS b, count(*) FROM students GROUP BY 1")
     # GROUP BY 1 would group by the constant 1 in a select list of its own; it must become the expression.
-    assert s["group_by"] == "SELECT batch_id AS b, count(*) AS rows_in_group FROM students GROUP BY batch_id"
+    assert s["group_by"] == "SELECT batch_id AS b, count(*) AS rows_in_group\nFROM students\nGROUP BY batch_id"
     s = _by_kind("SELECT upper(name) AS who, count(*) FROM students GROUP BY who")
-    assert s["group_by"] == "SELECT upper(name) AS who, count(*) AS rows_in_group FROM students GROUP BY who"
+    assert s["group_by"] == "SELECT upper(name) AS who, count(*) AS rows_in_group\nFROM students\nGROUP BY who"
 
 
 def test_titles_use_relational_algebra():

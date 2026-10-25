@@ -1,0 +1,162 @@
+/* Step-through visualizer. Motion is transform/opacity only; globals.css zeroes it under reduced motion. */
+
+.st-rail {
+  --st-dot: 12px;
+  position: relative;
+  display: grid;
+  grid-template-columns: repeat(var(--st-n), minmax(0, 1fr));
+}
+
+/* the lane: a hairline from the first dot to the last, and the accent fill up to the selected stage */
+.st-lane,
+.st-lane-fill {
+  position: absolute;
+  top: calc(var(--st-top) + var(--st-dot) / 2 - 1px);
+  left: calc(50% / var(--st-n));
+  right: calc(50% / var(--st-n));
+  height: 2px;
+  border-radius: 2px;
+  pointer-events: none;
+}
+.st-lane {
+  background: var(--border-strong);
+}
+.st-lane-fill {
+  background: var(--accent);
+  transform-origin: left center;
+  transform: scaleX(var(--st-progress));
+  transition: transform 360ms cubic-bezier(0.3, 0.7, 0.2, 1);
+}
+
+.st-stop {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  padding: 0 2px 10px;
+  border-radius: var(--radius-control);
+  outline-offset: 2px;
+  cursor: pointer;
+  color: var(--muted);
+  transition: color 160ms ease-out;
+}
+.st-stop:hover {
+  color: var(--text);
+}
+.st-stop[aria-selected="true"] {
+  color: var(--text);
+}
+
+.st-dot {
+  position: relative;
+  width: var(--st-dot);
+  height: var(--st-dot);
+  border-radius: 999px;
+  background: var(--bg);
+  box-shadow: inset 0 0 0 2px var(--border-strong);
+  transition:
+    transform 220ms cubic-bezier(0.3, 0.7, 0.2, 1),
+    box-shadow 220ms ease-out,
+    background-color 220ms ease-out;
+}
+.st-stop[data-passed="true"] .st-dot {
+  background: var(--accent);
+  box-shadow: inset 0 0 0 2px var(--accent);
+}
+.st-stop[aria-selected="true"] .st-dot {
+  transform: scale(1.35);
+  box-shadow:
+    inset 0 0 0 2px var(--accent),
+    0 0 0 4px color-mix(in oklab, var(--accent) 22%, transparent);
+}
+.st-stop:hover .st-dot {
+  transform: scale(1.2);
+}
+.st-stop[aria-selected="true"]:hover .st-dot {
+  transform: scale(1.35);
+}
+
+/* the stops arrive left to right once, when a step-through comes back */
+@keyframes st-pop {
+  from {
+    opacity: 0;
+    transform: translateY(4px) scale(0.9);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+.st-enter {
+  animation: st-pop 300ms cubic-bezier(0.2, 0.7, 0.2, 1) both;
+}
+@keyframes st-draw {
+  from {
+    transform: scaleX(0);
+  }
+  to {
+    transform: none;
+  }
+}
+.st-lane-draw {
+  transform-origin: left center;
+  animation: st-draw 520ms cubic-bezier(0.45, 0, 0.2, 1) both;
+}
+
+.st-bar {
+  height: 3px;
+  width: 100%;
+  max-width: 72px;
+  border-radius: 3px;
+  background: var(--border);
+  overflow: hidden;
+}
+.st-bar > span {
+  display: block;
+  height: 100%;
+  border-radius: 3px;
+  background: currentColor;
+  opacity: 0.55;
+  transform-origin: left center;
+  transform: scaleX(var(--st-bar));
+  transition: transform 420ms cubic-bezier(0.3, 0.7, 0.2, 1);
+}
+.st-stop[aria-selected="true"] .st-bar > span {
+  background: var(--accent);
+  opacity: 1;
+}
+
+/* the selected stage's detail slides in from the side it was reached from */
+@keyframes st-detail-in {
+  from {
+    opacity: 0;
+    transform: translateX(calc(var(--st-dir, 1) * 10px));
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+.st-detail {
+  animation: st-detail-in 260ms cubic-bezier(0.2, 0.7, 0.2, 1) both;
+}
+
+/* the autoplay timer: a thin bar that fills while waiting for the next stage */
+@keyframes st-timer {
+  from {
+    transform: scaleX(0);
+  }
+  to {
+    transform: scaleX(1);
+  }
+}
+.st-timer {
+  position: absolute;
+  inset: auto 0 0 0;
+  height: 2px;
+  background: currentColor;
+  opacity: 0.45;
+  transform-origin: left center;
+  animation: st-timer var(--st-interval) linear both;
+}
