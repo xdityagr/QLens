@@ -9,11 +9,11 @@ from qlens.errors import install_error_handlers
 
 @asynccontextmanager
 async def lifespan(_: FastAPI):
-    db.pool.open(wait=False)
+    db.open_pool()
     try:
         yield
     finally:
-        db.pool.close()
+        db.close_pool()
 
 
 app = FastAPI(title="QLens", lifespan=lifespan)

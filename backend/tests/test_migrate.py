@@ -8,3 +8,13 @@ def test_migrations_are_recorded_and_idempotent(conn):
 def test_health(client):
     r = client.get("/api/health")
     assert r.status_code == 200 and r.json() == {"ok": True, "db": True}
+
+
+def test_app_can_start_twice():
+    # Regression: the lifespan used to reopen a closed module-level pool, which psycopg_pool forbids.
+    from fastapi.testclient import TestClient
+    from qlens.main import app
+    # No `client` fixture: this exercises the real pool (dev DB) across two startups.
+    for _ in range(2):
+        with TestClient(app) as tc:
+            assert tc.get("/api/health").json() == {"ok": True, "db": True}
