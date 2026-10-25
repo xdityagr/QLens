@@ -19,15 +19,12 @@ export function InconsistencyIssues({
   fds,
   cols,
   busy,
-  flash,
 }: {
   wsId: number
   items: InconsistencyOut[]
   fds: FDOut[]
   cols: ColumnIndex
   busy: boolean
-  /** fd id to highlight briefly (from a click on the diagram) */
-  flash: { fdId: number; n: number } | null
 }) {
   const entries = useMemo(() => inconsistencyEntries(fds, items), [fds, items])
   // Keyed by the rule itself: every cleanup re-runs the analysis, which issues fresh fd ids.
@@ -47,10 +44,7 @@ export function InconsistencyIssues({
           tabIndex={-1}
           className={(p.leaving ? "anim-leave" : "anim-enter") + " outline-none"}
         >
-          <div
-            key={flash && flash.fdId === p.item.fdId ? flash.n : 0}
-            className={flash?.fdId === p.item.fdId ? "anim-flash" : undefined}
-          >
+          <div>
             <Inconsistency wsId={wsId} entry={p.item} cols={cols} busy={busy || p.leaving} />
           </div>
         </li>

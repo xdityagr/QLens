@@ -40,6 +40,13 @@ export function IssuesPanel({
     if (!el) return
     el.scrollIntoView({ behavior: reduced ? "auto" : "smooth", block: "center" })
     el.focus({ preventScroll: true })
+    // Restart the highlight imperatively: remounting the block would reset the user's picks.
+    const box = el.firstElementChild
+    if (box) {
+      box.classList.remove("anim-flash")
+      void (box as HTMLElement).offsetWidth
+      box.classList.add("anim-flash")
+    }
   }, [focus, reduced])
 
   return (
@@ -72,7 +79,6 @@ export function IssuesPanel({
               fds={a.fds}
               cols={cols}
               busy={busy}
-              flash={focus}
             />
           </Group>
         </div>

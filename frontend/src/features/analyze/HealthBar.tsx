@@ -50,7 +50,10 @@ export function HealthBar({
               <span className="size-2 rounded-full" style={{ background: tone }} />
             )}
           </span>
-          <p className="flex min-w-0 flex-wrap items-baseline gap-x-4 gap-y-0.5 text-[13.5px] text-muted" aria-live="polite">
+          <p className="flex min-w-0 flex-wrap items-baseline gap-x-4 gap-y-0.5 text-[13.5px] text-muted">
+            <span className="sr-only" aria-live="polite">
+              {clean ? "No open issues" : `${h.issues} ${h.issues === 1 ? "issue" : "issues"} to review`}
+            </span>
             <span className="text-[15px] font-medium tracking-[-0.01em] text-text">
               {clean ? (
                 "No open issues"

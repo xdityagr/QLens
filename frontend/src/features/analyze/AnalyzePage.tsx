@@ -173,6 +173,8 @@ function Analysis({
   const reduced = usePrefersReducedMotion()
   const cols: ColumnIndex = useMemo(() => indexColumns(columns), [columns])
   const anatomy = useMemo(() => buildAnatomy(a, columns ?? [], { showDerived }), [a, columns, showDerived])
+  // A column can vanish from the diagram (rules change, derived rules hidden): drop a stale selection.
+  const activeSelected = selected && anatomy.columns.some((c) => c.name === selected) ? selected : null
   const derivedCount = a.fds.filter((f) => f.is_derived).length
 
   // An approximate rule's edge leads to its inconsistency; any other edge to its line in the rules list.
@@ -199,13 +201,13 @@ function Analysis({
         derivedCount={derivedCount}
         showDerived={showDerived}
         onShowDerived={setShowDerived}
-        selected={selected}
+        selected={activeSelected}
         onSelect={setSelected}
         onEdgeActivate={activateEdge}
       />
       <div className="grid items-start gap-8 xl:grid-cols-[minmax(0,1fr)_minmax(340px,0.62fr)]">
         <IssuesPanel wsId={wsId} a={a} cols={cols} busy={busy} focus={focus} />
-        <DependencyList wsId={wsId} fds={a.fds} cols={cols} showDerived={showDerived} selected={selected} />
+        <DependencyList wsId={wsId} fds={a.fds} cols={cols} showDerived={showDerived} selected={activeSelected} />
       </div>
     </div>
   )
