@@ -131,3 +131,11 @@ def test_requires_login_and_ownership(client, second_client, ws_id, other_applie
 def test_cross_workspace_read_is_a_recorded_db_error(client, ws_id, other_applied_ws):
     r = client.post(_url(ws_id, "/query"), json={"sql": f"SELECT * FROM ws_{other_applied_ws.id}.students"})
     assert r.status_code == 400 and r.json()["error"]["detail"]["sqlstate"] == "42501"
+
+
+def test_pathological_query_is_rejected_and_recorded(client, ws_id):
+    # 12 KB, under the length cap: used to overflow the C stack inside the SQL parser and kill the server.
+    r = client.post(_url(ws_id, "/query"), json={"sql": "SELECT " + "+".join(["1"] * 6000)})
+    assert r.status_code == 400 and r.json()["error"]["code"] == "query_too_complex"
+    [h] = client.get(_url(ws_id, "/history")).json()
+    assert h["status"] == "error"

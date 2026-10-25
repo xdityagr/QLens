@@ -126,3 +126,31 @@ def test_run_itself_refuses_a_second_statement(applied_fee):
         with pytest.raises(QueryError) as e:
             run(applied_fee.id, q)
         assert "multiple commands" in e.value.message
+
+
+def test_connection_failures_do_not_leak_host_or_role(monkeypatch):
+    # Pure: no database needed.
+    settings = get_settings()
+
+    def refuse(*a, **kw):
+        raise psycopg.OperationalError(
+            f'connection to server at "{settings.pg_host}" ({settings.pg_host}), port {settings.pg_port} failed: '
+            f'FATAL: role "{db.ws_role(7)}" does not exist')
+
+    monkeypatch.setattr(psycopg, "connect", refuse)
+    with pytest.raises(QueryError) as e:
+        run(7, "SELECT 1")
+    assert e.value.code == "db_error"
+    for secret in (settings.pg_host, str(settings.pg_port), db.ws_role(7)):
+        assert secret not in e.value.message
+
+
+def test_too_many_connections_is_friendly(monkeypatch):
+    def refuse(*a, **kw):
+        raise psycopg.errors.TooManyConnections(f'too many connections for role "{db.ws_role(7)}"')
+
+    monkeypatch.setattr(psycopg, "connect", refuse)
+    with pytest.raises(QueryError) as e:
+        run(7, "SELECT 1")
+    assert e.value.sqlstate == "53300"
+    assert e.value.message == "Too many queries are running for this workspace — try again in a moment."

@@ -139,7 +139,13 @@ def run_query(body: QueryIn, conn: db.Conn, ws: WorkspaceRow = Depends(owned_wor
         _require_saved_query(conn, ws.id, body.saved_query_id)
     sql_text, outcome = body.sql, None
     try:
-        sql_text = validate_select(body.sql)
+        try:
+            sql_text = validate_select(body.sql)
+        except ApiError:
+            raise
+        except Exception:  # noqa: BLE001 - whatever the checker chokes on, the run is still recorded and answered
+            raise ApiError(422, "invalid_query", "This query could not be checked. Simplify it and try again.",
+                           detail={"position": None}) from None
         outcome = sandbox.run(ws.id, sql_text, target=body.target)
     except (ApiError, QueryError) as e:
         outcome = e

@@ -96,9 +96,13 @@ def run(ws_id: int, sql_text: str, *, target: Literal["main", "lab"] = "main",
     try:
         conn = psycopg.connect(host=settings.pg_host, port=settings.pg_port, dbname=settings.pg_dbname,
                                user=db.ws_role(ws_id), password=db.ws_password(ws_id),
-                               connect_timeout=5, options=f"-c search_path={search_path}")
+                               connect_timeout=5, prepare_threshold=5, options=f"-c search_path={search_path}")
     except psycopg.Error as e:
-        raise QueryError("db_error", f"Could not open a sandbox connection: {e}", e.sqlstate) from None
+        # Never echo str(e): connection errors name the host, port and role.
+        if e.sqlstate == "53300":  # too_many_connections: the role's CONNECTION LIMIT
+            raise QueryError("db_error", "Too many queries are running for this workspace — try again in a moment.",
+                             e.sqlstate) from None
+        raise QueryError("db_error", "Could not reach the sandbox database.", e.sqlstate) from None
     started = perf_counter()
     try:
         _install_tolerant_loaders(conn)
