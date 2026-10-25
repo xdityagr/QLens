@@ -143,3 +143,12 @@ def kirana_ws(conn, make_workspace) -> WsHandle:
 @pytest.fixture
 def hostel_ws(conn, make_workspace) -> WsHandle:
     return _with_sample(conn, make_workspace(), "hostel_mess")
+
+
+@pytest.fixture
+def staged_tiny(conn) -> tuple[str, str]:
+    """(schema, table) of a 4-row table a,b: (1,x),(1,x),(1,y),(2,z). Dropped by the next test's wipe."""
+    conn.execute("CREATE SCHEMA ws_tiny_src")
+    conn.execute("CREATE TABLE ws_tiny_src._staging (_row_id bigint PRIMARY KEY, a bigint, b text)")
+    conn.execute("INSERT INTO ws_tiny_src._staging VALUES (1, 1, 'x'), (2, 1, 'x'), (3, 1, 'y'), (4, 2, 'z')")
+    return "ws_tiny_src", "_staging"
