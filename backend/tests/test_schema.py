@@ -89,6 +89,10 @@ def test_applied_proposal_requires_lossless(conn):
     _expect(conn, errors.CheckViolation,
             "INSERT INTO qlens.schema_proposals (dataset_id, status, lossless_ok) VALUES (%s, 'applied', false)",
             (ds,))
+    # Not yet checked (NULL) is not good enough either.
+    _expect(conn, errors.CheckViolation,
+            "INSERT INTO qlens.schema_proposals (dataset_id, status, lossless_ok) VALUES (%s, 'applied', NULL)",
+            (ds,))
     _proposal(conn, ds, "applied", lossless_ok=True)
 
 
@@ -170,8 +174,17 @@ def test_slow_queries_view(conn):
 def test_workspace_summary_stage_empty(conn):
     ws = _workspace(conn)
     row = conn.execute("SELECT * FROM qlens.v_workspace_summary WHERE workspace_id=%s", (ws,)).fetchone()
-    assert row["stage"] == "empty" and row["query_count"] == 0 and row["table_count"] == 0
-    assert row["row_count"] is None and row["last_activity_at"] is not None
+    assert row["stage"] == "empty" and row["query_count"] == 0
+    assert row["row_count"] is None and row["column_count"] is None and row["table_count"] is None
+    assert row["last_activity_at"] is not None
+
+
+def test_workspace_summary_dataset_without_applied_proposal(conn):
+    ws = _workspace(conn)
+    ds = _dataset(conn, ws, status="analyzed")
+    _proposal(conn, ds, "draft")  # a draft's tables must not be counted
+    row = conn.execute("SELECT * FROM qlens.v_workspace_summary WHERE workspace_id=%s", (ws,)).fetchone()
+    assert (row["stage"], row["table_count"]) == ("analyzed", 0)
 
 
 def test_workspace_summary_with_dataset(conn):

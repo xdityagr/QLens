@@ -49,7 +49,7 @@ CREATE TRIGGER query_runs_record AFTER INSERT ON qlens.query_runs
 -- One row per workspace for the workspace list: how far along it is and how much it has been used.
 --   stage             'empty' until a dataset is imported, then the dataset's status
 --   row_count/column_count   size of the imported dataset (NULL while empty)
---   table_count       tables in the applied proposal (0 until a design is applied)
+--   table_count       tables in the applied proposal: 0 until a design is applied, NULL while empty
 --   last_activity_at  latest of: workspace edit, dataset edit, most recent query run
 CREATE VIEW qlens.v_workspace_summary AS
 SELECT w.id                                AS workspace_id,
@@ -59,13 +59,14 @@ SELECT w.id                                AS workspace_id,
        COALESCE(d.status, 'empty')         AS stage,
        d.row_count,
        d.column_count,
-       t.table_count,
+       CASE WHEN d.id IS NOT NULL THEN t.table_count END AS table_count,
        q.query_count,
        -- GREATEST ignores NULLs, so a workspace without a dataset or runs still gets a value.
        GREATEST(w.updated_at, d.updated_at, q.last_run_at) AS last_activity_at
 FROM qlens.workspaces w
 LEFT JOIN qlens.datasets d ON d.workspace_id = w.id
--- Aggregates without GROUP BY always return exactly one row, so these laterals never drop a workspace.
+-- Aggregates without GROUP BY always return exactly one row, so these laterals never drop a workspace
+-- (table_count is masked to NULL above when there is no dataset).
 LEFT JOIN LATERAL (
     SELECT count(*) AS table_count
     FROM qlens.schema_proposals sp

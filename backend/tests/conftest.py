@@ -19,7 +19,12 @@ def test_url() -> str:
 
 @pytest.fixture(scope="session", autouse=True)
 def _migrated(test_url):
+    # Rebuild from scratch so edited migration files never meet a stale schema. qlens_app owns the schema.
     with psycopg.connect(test_url, row_factory=dict_row) as c:
+        c.execute("DROP SCHEMA IF EXISTS qlens CASCADE")
+        c.execute("CREATE SCHEMA qlens")
+        c.execute("REVOKE ALL ON SCHEMA qlens FROM PUBLIC")
+        c.commit()
         apply_migrations(c)
 
 

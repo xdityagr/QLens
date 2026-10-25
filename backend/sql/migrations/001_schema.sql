@@ -202,7 +202,7 @@ CREATE TABLE qlens.schema_proposals (
     staging_rows       integer CHECK (staging_rows >= 0),
     reconstructed_rows integer CHECK (reconstructed_rows >= 0),
     mismatch_rows      integer CHECK (mismatch_rows >= 0),
-    CHECK (status <> 'applied' OR lossless_ok)
+    CHECK (status <> 'applied' OR lossless_ok IS TRUE)   -- IS TRUE: NULL (not checked) must not pass
 );
 -- At most one live (draft or applied) proposal per dataset, any number of superseded ones.
 -- Also serves "the current proposal of this dataset" and the cascade from datasets.
