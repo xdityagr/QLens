@@ -332,3 +332,61 @@ def test_csv_export_follows_the_view(client, ws_id):
     assert int(first[0]) == view["rows"][0]["id"] and first[3] == "1"
     assert first[4] == view["fk_labels"]["batch_id"]["1"]
     assert client.get(_url(ws_id, "/data/nope/export")).status_code == 404
+
+
+# ---- fix round 1 ----------------------------------------------------------------------------------
+
+def test_csv_export_neutralises_formulas(client, conn, ws_id):
+    ws = f"ws_{ws_id}"
+    conn.execute(f"UPDATE {ws}.teachers SET teacher_phone = '=1+1' WHERE id = 1")
+    conn.execute(f"UPDATE {ws}.teachers SET teacher = '@SUM(A1)' WHERE id = 2")
+    conn.execute(f"UPDATE {ws}.fee_register SET fee_paid = -5 WHERE id = 1")
+    conn.commit()
+    import csv as csvmod
+    teachers = list(csvmod.reader(client.get(_url(ws_id, "/data/teachers/export")).text.splitlines()))
+    by_id = {r[0]: r for r in teachers[1:]}
+    assert by_id["1"][2] == "'=1+1" and by_id["2"][1] == "'@SUM(A1)"
+    # A label column (the referenced row's name) is text too.
+    batches = list(csvmod.reader(client.get(_url(ws_id, "/data/batches/export"),
+                                            params={"f": "teacher_id:eq:2"}).text.splitlines()))
+    assert batches[0][-1] == "teacher_id_label" and all(r[-1] == "'@SUM(A1)" for r in batches[1:])
+    # Numbers are left alone: a negative fee is a number, not a formula.
+    fees = list(csvmod.reader(client.get(_url(ws_id, "/data/fee_register/export"),
+                                         params={"f": "id:eq:1"}).text.splitlines()))
+    assert fees[1][fees[0].index("fee_paid")] == "-5"
+
+
+def test_csv_export_says_when_it_was_cut_off(client, ws_id, monkeypatch):
+    from qlens.data import service
+    assert "x-qlens-truncated" not in client.get(_url(ws_id, "/data/teachers/export")).headers
+    monkeypatch.setattr(service, "EXPORT_LIMIT", 2)
+    r = client.get(_url(ws_id, "/data/teachers/export"))
+    assert r.headers["x-qlens-truncated"] == "true" and len(r.text.splitlines()) == 1 + 2
+
+
+def test_page_is_capped(client, ws_id):
+    assert client.get(_url(ws_id, "/data/students"), params={"page": 10**12}).status_code == 422
+    r = client.get(_url(ws_id, "/data/students"), params={"page": 100_000})
+    assert r.status_code == 200 and r.json()["rows"] == []
+
+
+def test_fk_violation_on_update(client, ws_id):
+    row = _first(client, ws_id, "fee_register")
+    r = client.patch(_url(ws_id, f"/data/fee_register/{row['id']}"), json={"values": {"student_id": 987654}})
+    assert r.status_code == 409
+    err = r.json()["error"]
+    assert err["code"] == "foreign_key_violation" and err["message"].startswith("No such student")
+    d = err["detail"]
+    assert (d["constraint"], d["columns"], d["sqlstate"], d["operation"]) == (
+        "fee_register_student_id_fkey", ["student_id"], "23503", "UPDATE")
+
+
+def test_invalid_date_names_the_column(client, conn, ws_id):
+    conn.execute(f"ALTER TABLE ws_{ws_id}.fee_register ADD COLUMN paid_on date")
+    conn.commit()
+    row = _first(client, ws_id, "fee_register")
+    r = client.patch(_url(ws_id, f"/data/fee_register/{row['id']}"), json={"values": {"paid_on": "next tuesday"}})
+    assert r.status_code == 422
+    err = r.json()["error"]
+    assert err["code"] == "invalid_input" and err["detail"]["columns"] == ["paid_on"]
+    assert err["detail"]["sqlstate"] == "22007" and "type date" in err["message"]

@@ -254,29 +254,55 @@ def list_rows(conn: psycopg.Connection, ws_id: int, name: str, page: int, page_s
                    total=total, page=page, page_size=page_size)
 
 
+# A spreadsheet runs a cell that starts with one of these as a formula (CSV injection).
+_FORMULA_START = ("=", "+", "-", "@", "\t", "\r")
+
+
+def _csv_text(v: Any) -> Any:
+    """A text value made inert for spreadsheets: a leading quote shows the text as typed."""
+    return "'" + v if isinstance(v, str) and v.startswith(_FORMULA_START) else v
+
+
+def _is_text(data_type: str) -> bool:
+    """Character types, whose values a spreadsheet could read as a formula. Numbers, dates and booleans
+    cannot start with = + @, and a negative number's minus sign is just a number."""
+    t = data_type.lower()
+    return t == "text" or t.startswith(("character", "varchar", "char", "citext", "json", "xml"))
+
+
 def export_csv(conn: psycopg.Connection, ws_id: int, name: str, sort: str | None,
-               direction: Literal["asc", "desc"], q: str, filters: list[Filter]) -> str:
-    """The grid's current view, every page of it, as CSV. Each foreign key is followed by its label."""
+               direction: Literal["asc", "desc"], q: str, filters: list[Filter]) -> tuple[str, bool]:
+    """The grid's current view, every page of it (up to EXPORT_LIMIT rows), as CSV, and whether the limit
+    cut it short. Each foreign key is followed by its label."""
     t, all_ = table(conn, ws_id, name)
     v = _view(conn, t, all_, sort, direction, q, filters)
     select: list[sql.Composable] = []
     header: list[str] = []
+    textual: list[bool] = []   # per output column: escape formulas (text and labels, never numbers)
     for c in t.columns:
         select.append(sql.Identifier("t", c["name"]))
         header.append(c["name"])
+        textual.append(c["fk"] is None and _is_text(c["data_type"]))
         if c["fk"] is not None and (ref := all_.get(c["fk"]["table"])) is not None:
             select.append(sql.SQL("(SELECT {} FROM {} r WHERE r.id = {})").format(
                 _label(ref, "r"), ref.ident, sql.Identifier("t", c["name"])))
             header.append(f"{c['name']}_label")
+            textual.append(True)
+    limit = EXPORT_LIMIT
     cur = conn.cursor(row_factory=psycopg.rows.tuple_row)
+    # One row past the limit tells whether there was more.
     cur.execute(sql.SQL("SELECT {} FROM {} t WHERE {} ORDER BY {} LIMIT %s").format(
-        sql.SQL(", ").join(select), t.ident, v.where, v.order), [*v.params, EXPORT_LIMIT])
+        sql.SQL(", ").join(select), t.ident, v.where, v.order), [*v.params, limit + 1])
     buf = io.StringIO()
     w = csv.writer(buf, lineterminator="\n")
     w.writerow(header)
-    for r in cur:
-        w.writerow(["" if x is None else cell(x) for x in r])
-    return buf.getvalue()
+    truncated = False
+    for i, r in enumerate(cur):
+        if i == limit:
+            truncated = True
+            break
+        w.writerow(["" if x is None else _csv_text(cell(x)) if text else cell(x) for x, text in zip(r, textual)])
+    return buf.getvalue(), truncated
 
 
 class RelatedOut(BaseModel):
