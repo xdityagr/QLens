@@ -2,6 +2,7 @@
 % TODO verify after Task 13 (query runner): message names follow the plan; role settings already exist.
 \begin{figure}[tbp]
 \centering
+\resizebox{\linewidth}{!}{%
 \begin{tikzpicture}[
     life/.style={draw=#1!75!black, fill=#1!10, line width=0.6pt, rounded corners=2pt,
       font=\sffamily\scriptsize\bfseries, align=center, minimum width=2.2cm, minimum height=9mm},
@@ -46,11 +47,11 @@
   \node[font=\sffamily\tiny\bfseries, text=lane7, anchor=north west] at (6.62,-7.37) {alt};
   \node[font=\sffamily\tiny, text=lane7, anchor=north west, text width=4.9cm] at (7.15,-7.37)
     {timeout (SQLSTATE 57014) or privilege error (42501): the run is still recorded with status \code{timeout}/\code{error}, the API answers 400};
-\end{tikzpicture}
-\caption{Sequence of a user query through the sandbox. The query never runs on the application's pooled
+\end{tikzpicture}}
+\caption[Query sequence]{Sequence of a user query through the sandbox. The query never runs on the application's pooled
 connection: it runs on a separate login as the workspace role, whose privileges reach only that
 workspace's schemas, inside a read-only transaction with a statement timeout and a row cap. The run is
 then recorded on the pooled connection, where a trigger maintains the saved query's statistics.
-(Query runner specified; the role, its settings, \code{query\_runs} and the trigger are built and tested.)}
+(Runner in progress; the role, its settings, \code{query\_runs} and the trigger are built and tested.)}
 \label{fig:seq-query}
 \end{figure}

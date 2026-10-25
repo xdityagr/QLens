@@ -1,6 +1,7 @@
 % End-to-end normalization pipeline: what runs where, and which tables each step reads and writes.
 \begin{figure}[tbp]
 \centering
+\resizebox{\linewidth}{!}{%
 \begin{tikzpicture}[
     step/.style={draw=#1!75!black, fill=#1!8, line width=0.6pt, rounded corners=3pt, align=left,
       text width=6.6cm, inner sep=4pt, font=\sffamily\scriptsize},
@@ -37,7 +38,7 @@
   % data touched by each step
   \node[store, right=9mm of s2] (t2) {\code{ws\_<id>\_src.\_raw} (text, never edited)\\ \code{ws\_<id>\_src.\_staging} (typed)};
   \node[store, right=9mm of s3] (t3) {\code{qlens.datasets}, \code{qlens.dataset\_columns}};
-  \node[store, right=9mm of s4] (t4) {\code{qlens.candidate\_keys} (+ columns)\\ \code{qlens.functional\_dependencies} (+ LHS)};
+  \node[store, right=9mm of s4] (t4) {\code{qlens.candidate\_keys} (+ columns)\\ \code{qlens.functional\_}\\\quad\code{dependencies} (+ LHS)};
   \node[store, right=9mm of s5] (t5) {\code{qlens.duplicate\_groups} / \code{\_values}};
   \node[store, right=9mm of s6] (t6) {\code{\_staging} rows \textrightarrow{} \code{qlens.dataset\_fixes}};
   \node[store, right=9mm of s7] (t7) {\code{qlens.schema\_proposals}, \code{proposed\_tables}, \code{proposed\_columns}, \code{proposed\_unique\_keys}};
@@ -53,8 +54,8 @@
      \textcolor{lane3}{\rule{6pt}{6pt}} apply\\[2pt]
      \color{muted} Steps 1--7 are built and tested; the apply transaction (8) runs the generated SQL that the
      end-to-end tests already execute and verify.};
-\end{tikzpicture}
-\caption{The normalization pipeline from upload to the lossless check. Left: the steps in order (colour
+\end{tikzpicture}}
+\caption[Normalization pipeline]{The normalization pipeline from upload to the lossless check. Left: the steps in order (colour
 marks the phase); right: the tables each step writes. Steps 4--6 can loop: every clean-up re-profiles the
 edited columns and re-runs discovery.}\label{fig:pipeline}
 \end{figure}

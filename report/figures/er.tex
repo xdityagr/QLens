@@ -1,0 +1,12 @@
+% Whole qlens metadata schema on one landscape page: part 1 (accounts, datasets, analysis) and
+% part 2 (designs, queries, performance lab), drawn from backend/sql/migrations/001_schema.sql.
+\begin{sidewaysfigure}
+  \centering
+  \resizebox{0.98\linewidth}{!}{%
+    \input{figures/er-part1}\hspace{1.2cm}\input{figures/er-part2}}
+  \caption[ER diagram of the metadata schema]{Entity--relationship diagram of the \code{qlens} metadata
+  schema (22 tables) in crow's-foot notation. Left: accounts, workspaces, the dataset and the analysis
+  results. Right: proposed designs, query history and the performance lab; grey boxes repeat tables from
+  the left, dashed relationships are optional (nullable foreign keys).}
+  \label{fig:er}
+\end{sidewaysfigure}

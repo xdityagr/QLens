@@ -20,7 +20,7 @@
   \draw[tier=lane0] (0,0) rectangle (15.2,2.55);
   \node[tiername=lane0] at (0.15,2.5) {Client tier \textperiodcentered{} browser};
   \node[note, anchor=north east] at (15.05,2.48) {React 19 single-page app \textperiodcentered{} Vite 8, TypeScript, Tailwind CSS 4};
-  \foreach \t [count=\i from 0] in {Sign-in, Workspaces, Import, Analyze, Design canvas, Query, Performance, History}
+  \foreach \t [count=\i from 0] in {Landing, Dashboard, Import, Analyze, Design canvas, Query, Performance, History}
     \node[chip=lane0, minimum width=1.68cm] at (1.0+\i*1.88,1.35) {\t};
   \node[note, anchor=south west] at (0.2,0.12)
     {TanStack Query cache \textperiodcentered{} React Flow (ER diagram, plan tree) \textperiodcentered{}
@@ -45,7 +45,7 @@
   \node[chip=lane1, minimum width=2.6cm, todo] (m7) at (1.55,-3.05) {perf lab\\[-1pt]\tiny lab, explain, advisor};
   \node[chip=lane1, minimum width=2.4cm, todo] (m8) at (4.3,-3.05) {stepthrough\\[-1pt]\tiny pglast stages};
   \node[chip=lane1, minimum width=3.0cm, todo] (m9) at (7.25,-3.05) {assistant\\[-1pt]\tiny validated tools, conversations};
-  \node[note, anchor=west, align=left] at (8.85,-3.05) {solid: built and tested\\dashed: specified, in progress};
+  \node[note, anchor=west, align=left] at (8.85,-3.05) {solid: built and tested\\dashed: in progress or planned};
   % connection paths
   \node[chip=lane4, minimum width=6.6cm, minimum height=1.25cm, anchor=north west] (pool) at (0.3,-3.85)
     {\textbf{psycopg ConnectionPool} (1--10 connections) as \code{qlens\_app}\\
@@ -96,5 +96,5 @@
   \node[note, text=lane7, anchor=west, fill=white, inner sep=1pt] at (4.38,-6.9) {no privilege on \code{qlens}};
 \end{tikzpicture}
 }
-\caption{Layered architecture of QLens. Application code reaches PostgreSQL through two kinds of connection: the shared pool as the owning role, and a per-query sandbox connection as the workspace's own low-privilege LOGIN role.}\label{fig:architecture}
+\caption[Layered architecture]{Layered architecture of QLens. Application code reaches PostgreSQL through two kinds of connection: the shared pool as the owning role, and a per-query sandbox connection as the workspace's own low-privilege LOGIN role.}\label{fig:architecture}
 \end{figure}

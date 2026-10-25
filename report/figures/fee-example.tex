@@ -32,20 +32,20 @@
      \fd{student\_name}{batch} and \fd{student\_phone}{teacher} are derived and not shown.};
 
   % ---- (b) the synthesized schema --------------------------------------------------------------
-  \node[font=\sffamily\small\bfseries, anchor=west] at (-0.2,-2.8) {(b) Synthesized 3NF schema (lane colours as in the application)};
+  \node[font=\sffamily\small\bfseries, anchor=west] at (-0.2,-2.95) {(b) Synthesized 3NF schema (lane colours as in the application)};
   \newcommand{\ftab}[4]{% name, colour, rows, extra
     \begin{tabular}{@{}l@{\hspace{6pt}}l@{}}
       \multicolumn{2}{@{}>{\columncolor{#2}}c@{}}{\rule{0pt}{10pt}\textcolor{white}{\bfseries\sffamily\footnotesize #1}}\\[1pt]
       #3
     \end{tabular}}
-  \node[tab=lane3, anchor=north west] (FR) at (0,-2.75) {\ftab{fee\_register}{lane3}{
+  \node[tab=lane3, anchor=north west] (FR) at (0,-3.35) {\ftab{fee\_register}{lane3}{
     \PK & id\\ \FK & student\_id\\ & month\\ & fee\_paid\\ & payment\_mode\\
     \multicolumn{2}{@{}l@{}}{\color{lane5}\itshape UQ(student\_id, month)}}{}};
-  \node[tab=lane0, anchor=north west] (ST) at (4.0,-2.75) {\ftab{students}{lane0}{
+  \node[tab=lane0, anchor=north west] (ST) at (4.0,-3.35) {\ftab{students}{lane0}{
     \PK & id\\ \UQ & student\_name\\ \UQ & student\_phone\\ \FK & batch\_id}{}};
-  \node[tab=lane1, anchor=north west] (BA) at (8.0,-2.75) {\ftab{batches}{lane1}{
+  \node[tab=lane1, anchor=north west] (BA) at (8.0,-3.35) {\ftab{batches}{lane1}{
     \PK & id\\ \UQ & batch\\ \FK & teacher\_id}{}};
-  \node[tab=lane2, anchor=north west] (TE) at (11.7,-2.75) {\ftab{teachers}{lane2}{
+  \node[tab=lane2, anchor=north west] (TE) at (11.7,-3.35) {\ftab{teachers}{lane2}{
     \PK & id\\ \UQ & teacher\\ \UQ & teacher\_phone}{}};
   \draw[rel, {ER many}-{ER one}] ([yshift=-7mm]FR.north east) -- ([yshift=-7mm]ST.north west);
   \draw[rel, {ER many}-{ER one}] ([yshift=-7mm]ST.north east) -- ([yshift=-7mm]BA.north west);
@@ -53,7 +53,7 @@
   \foreach \n/\r in {FR/{3{,}000 rows}, ST/{300 rows}, BA/{8 rows}, TE/{6 rows}}
     \node[font=\sffamily\scriptsize\color{muted}, anchor=north west] at ([yshift=-1mm]\n.south west) {\r};
 \end{tikzpicture}
-\caption{Worked example on the bundled fee register. (a) The columns of the sheet with the dependencies
+\caption[Fee-register example]{Worked example on the bundled fee register. (a) The columns of the sheet with the dependencies
 QLens finds; arrows point from determinant to dependent, $\leftrightarrow$ marks a pair of mutually
 determining columns. (b) The schema produced by the synthesis after the 13 faulty rows are cleaned: each
 dependency moves to the table of its determinant, so a teacher's phone number is stored once instead of on

@@ -1,6 +1,7 @@
 % Use-case diagram: three user groups specialise one signed-in user.
 \begin{figure}[tbp]
 \centering
+\resizebox{\linewidth}{!}{%
 \begin{tikzpicture}[
     uc/.style={ellipse, draw=#1!75!black, fill=#1!7, line width=0.55pt, minimum width=3.9cm,
       minimum height=7.5mm, align=center, font=\sffamily\scriptsize, inner sep=1pt},
@@ -53,8 +54,8 @@
   \draw[assoc] (dev) -- (u12.east); \draw[assoc] (dev) -- (u11.east); \draw[assoc] (dev) -- (u14.east);
   \draw[assoc] (stu) -- (u13.east); \draw[assoc] (stu) -- (u14.east); \draw[assoc] (stu) -- (u15.east);
   % generalisation: each user group is a signed-in user
-\end{tikzpicture}
-\caption{Use-case diagram. The three target groups specialise a signed-in user and inherit the common
+\end{tikzpicture}}
+\caption[Use-case diagram]{Use-case diagram. The three target groups specialise a signed-in user and inherit the common
 flow (import, analyse, clean, design, apply, query); each group adds the use cases it motivates.
 Colours follow the pipeline phases of \cref{fig:pipeline}.}\label{fig:usecase}
 \end{figure}

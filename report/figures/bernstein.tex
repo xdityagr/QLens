@@ -1,6 +1,6 @@
 % 3NF synthesis as implemented in backend/qlens/analysis/fd_algebra.py (synthesize_3nf).
 \begin{algorithm}[htbp]
-\caption{Lossless 3NF synthesis used by QLens (Bernstein synthesis with equivalence merging, the
+\caption[Lossless 3NF synthesis]{Lossless 3NF synthesis used by QLens (Bernstein synthesis with equivalence merging, the
 step-5 redundancy pruning and a key relation)}\label{alg:bernstein}
 \KwIn{attributes $U$ in sheet order; exact, accepted dependencies $F$; candidate keys $K_1,\dots,K_m$ found in the data}
 \KwOut{relations $R_1,\dots,R_n$ (entities) and one fact relation $R_f$; every $R_i$ is in 3NF and $\bowtie_i R_i$ is lossless}

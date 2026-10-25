@@ -1,173 +1,137 @@
 \chapter{Requirement Analysis}
 \label{ch:requirements}
 
-This chapter fixes what QLens must do and how well it must do it. The requirements come from the problem described in the introduction: a small business keeps its records in one wide spreadsheet, and the same facts are typed many times with small variations. The target users are not database administrators. They are a coaching-centre owner, a shop keeper or a hostel manager who can read a table but has never written a \code{CREATE TABLE} statement. Each requirement below is therefore written from the point of view of what such a person must be able to do, and each carries a status that reflects the state of the implementation at the time of writing: \stdone{} means built and covered by automated tests, \stwip{} means partly built, and \stplan{} means designed but not yet implemented.
+The requirements come from the anomalies of \cref{ch:introduction}, from the three target users and
+from the three sample sheets, whose planted errors double as acceptance tests.
 
-%--------------------------------------------------------------------
 \section{Functional Requirements}
 \label{sec:functional}
 
-The functional requirements follow the pipeline of \cref{fig:pipeline}: a sheet enters the system, is analysed in SQL, is proposed as a normalised design, is applied, and is then queried. Requirements FR-1 to FR-8 form the normalisation pipeline; FR-9 to FR-13 are the surrounding services that make the resulting database usable.
-
 \begin{table}[htbp]
 \centering
-\caption{Functional requirements and their implementation status.}
+\caption[Functional requirements]{Functional requirements and their implementation status.}
 \label{tab:functional}
 \small
 \begin{tabularx}{\textwidth}{@{}l X c@{}}
 \toprule
 \textbf{ID} & \textbf{Requirement} & \textbf{Status} \\
 \midrule
-FR-1 & \textbf{Import.} Accept CSV and XLSX files, detect the header row and delimiter, and stage the raw cells in a per-workspace source schema without losing any row. & \stdone \\
-FR-2 & \textbf{Type inference.} Infer a SQL type for every column (\code{integer}, \code{numeric}, \code{date}, \code{boolean}, \code{text}) by testing the data in SQL, including day-first dates such as \code{05/03/2026}, and let the user override the choice. & \stdone \\
-FR-3 & \textbf{FD and key discovery.} Discover the functional dependencies that hold in the data and the candidate keys, using queries executed inside PostgreSQL rather than in application memory. & \stdone \\
-FR-4 & \textbf{Near-duplicate detection.} Find values that differ only by spelling, case or spacing (for example \code{Rahul Sharma} and \code{rahul  sharma}) using trigram similarity, and present them as groups with a suggested canonical value. & \stdone \\
-FR-5 & \textbf{Inconsistency fixes.} Detect cases where a determinant maps to more than one dependent value (an old and a new phone number for the same student), let the user choose the surviving value, and record every change in an audit log. & \stdone \\
-FR-6 & \textbf{3NF proposal.} Compute a minimal cover of the discovered dependencies, synthesise a third-normal-form decomposition, choose primary keys, substitute surrogate keys for composite references, name the tables and generate the DDL. & \stdone \\
-FR-7 & \textbf{Apply with lossless check.} Create the proposed tables, load the data and verify, inside one transaction, that the natural join of the new tables reproduces the cleaned source exactly; roll everything back if it does not. & \stwip \\
-FR-8 & \textbf{Design canvas.} Show the proposed schema as an entity-relationship diagram that the user can inspect and edit before applying. & \stwip \\
-FR-9 & \textbf{Sandboxed querying.} Let the user run arbitrary SELECT statements against the new tables, with write access impossible and runaway queries stopped by the database. & \stwip \\
-FR-10 & \textbf{Saved queries and history.} Keep a named, versioned list of saved queries and a log of every executed statement with its duration and row count. The metadata schema and views exist; the interface is being built. & \stwip \\
-FR-11 & \textbf{Performance lab.} Show \code{EXPLAIN ANALYZE} output as a plan tree, highlight the slowest nodes and suggest indexes. & \stplan \\
-FR-12 & \textbf{Step-through visualiser.} Animate how a query is evaluated, clause by clause, on a small sample of the data, for teaching purposes. & \stplan \\
-FR-13 & \textbf{Agentic chat.} Offer a Gemini-powered assistant that can inspect the workspace and propose, but not silently execute, schema or query changes. & \stplan \\
-FR-14 & \textbf{Accounts and workspaces.} Register and log in users; give every user isolated workspaces, each with its own schemas and database role. & \stdone \\
-FR-15 & \textbf{Sample data.} Provide generated example datasets (a coaching fee register, kirana shop sales, a hostel mess register) so that the tool can be demonstrated without private data. & \stdone \\
+FR-1 & \textbf{Accounts and workspaces.} Sign-up and sign-in; each workspace gets its own schemas and database role. & \stdone \\
+FR-2 & \textbf{Import.} CSV (encoding and delimiter detected) or XLSX; raw cells kept unchanged in \code{\_raw}. & \stdone \\
+FR-3 & \textbf{Type inference and profile.} Infer integer, numeric, boolean, date (incl.\ day-first) or text in SQL; null and distinct counts. & \stdone \\
+FR-4 & \textbf{Key and FD discovery.} Candidate keys (1--3 columns), exact and approximate dependencies (LHS 1--2), computed in PostgreSQL. & \stdone \\
+FR-5 & \textbf{Clean-up.} Near-duplicate groups via trigram similarity; conflicting rows of approximate dependencies with a suggested value; every edit logged. & \stdone \\
+FR-6 & \textbf{3NF proposal.} Minimal cover, Bernstein synthesis, surrogate and foreign keys, names, explanations, DDL; renames while a draft. & \stdone \\
+FR-7 & \textbf{Apply.} Create and load the tables in one transaction; commit only if the join of the new tables equals the cleaned rows. & \stdone \\
+FR-8 & \textbf{Design canvas.} Draggable ER diagram with rename, SQL panel and apply. & \stwip \\
+FR-9 & \textbf{Sandboxed queries and history.} Read-only SELECTs as the workspace role, timeout and row cap; saved queries and run log. & \stwip \\
+FR-10 & \textbf{Assistant.} Optional Gemini command bar: answers questions, edits the draft only through validated tools. & \stwip \\
+FR-11 & \textbf{Performance lab and step-through.} Plan tree from \code{EXPLAIN ANALYZE}, index experiments, clause-by-clause row counts. & \stplan \\
+FR-12 & \textbf{Samples.} Three generated sheets with known, planted problems. & \stdone \\
 \bottomrule
 \end{tabularx}
 \end{table}
 
-\paragraph{Import and type inference (FR-1, FR-2).}
-\Cref{fig:import} shows the import screen. Raw cells are first stored as text in the source schema \code{ws\_\textless id\textgreater\_src}, so nothing is lost if a guess is wrong. Type inference then runs in SQL: for each column the system counts how many values succeed under each candidate cast, using helper functions such as \code{qlens.try\_date}, and picks the narrowest type for which every non-empty value succeeds. Because Indian spreadsheets commonly write dates day-first, \code{try\_date} tries \code{DD/MM/YYYY} before any month-first reading.
+\begin{figure}[htbp]
+  \centering
+  \IfFileExists{screenshots/import-dark.png}{%
+    \fcolorbox{rule}{white}{\includegraphics[width=0.72\linewidth]{screenshots/import-dark.png}}}{}
+  \caption[Import screen]{Import (FR-2, FR-3): inferred SQL types, null and distinct counts, frequent
+  values and a preview of the staged rows.}
+  \label{fig:import}
+\end{figure}
 
-\screenshot{import-dark}{Importing a sheet: inferred types and preview}{fig:import}
-
-\paragraph{Discovery and cleanup (FR-3 to FR-5).}
-Dependency checking is expressed as a grouped aggregate: a dependency \fd{X}{A} holds if no group of rows sharing the same \code{X} contains more than one distinct value of \code{A}. The PL/pgSQL functions \code{qlens.check\_fd} and \code{qlens.is\_unique} implement this test, and a search over small determinant sets uses them to find candidate keys and minimal dependencies. For the 3,000-row fee register the whole analysis takes about 0.3 s. The cleanup step exists because real data violates the dependencies it ought to satisfy; the planted errors in the sample register (eight rows with spelling variants of a student name, and five rows carrying a superseded phone number for Mr.\ Gupta) are exactly the cases that stop a clean dependency from being discovered.
-
-\paragraph{Proposal and apply (FR-6, FR-7).}
-The proposal uses the synthesis algorithm of Bernstein~\cite{bernstein1976}, described in the design chapter, which guarantees a dependency-preserving, lossless-join decomposition in third normal form. The apply step re-checks that guarantee against the real rows rather than trusting the algorithm: it compares the cleaned source with the join of the new tables using \code{EXCEPT ALL} in both directions, so that duplicate rows are counted and not collapsed.
-
-%--------------------------------------------------------------------
 \section{Non-functional Requirements}
 \label{sec:nonfunctional}
 
 \begin{table}[htbp]
 \centering
-\caption{Non-functional requirements, the mechanism that meets each, and the measured or checked result.}
+\caption[Non-functional requirements]{Non-functional requirements and the mechanism that meets each.}
 \label{tab:nonfunctional}
 \small
-\begin{tabularx}{\textwidth}{@{}l l X X@{}}
+\begin{tabularx}{\textwidth}{@{}l l X@{}}
 \toprule
-\textbf{ID} & \textbf{Quality} & \textbf{Requirement and mechanism} & \textbf{Result} \\
+\textbf{ID} & \textbf{Quality} & \textbf{Mechanism} \\
 \midrule
-NFR-1 & Security and isolation & A user's SQL must never reach another user's data or change the database. Each workspace has its own PostgreSQL \code{LOGIN} role with privileges only on its schemas; query sessions run \code{READ ONLY}, with \code{statement\_timeout} of 5 s and a 1,000-row cap on returned results. Passwords are hashed with argon2; session tokens are stored only as SHA-256 hashes and sent in an \code{httpOnly} cookie. & Role isolation and auth covered by \code{test\_workspaces.py} and \code{test\_auth.py}. \\
-NFR-2 & Performance & Analysis must feel interactive on sheets of a few thousand rows. & Dependency and key discovery on 3,000 rows $\approx$ 0.3 s; near-duplicate search over 5,000 distinct values $\approx$ 1 s using a GIN trigram index. \\
-NFR-3 & Correctness and losslessness & The produced schema must be in 3NF, preserve the dependencies and reproduce the original data exactly. & Minimal cover, closure and Bernstein synthesis property-tested on thousands of random dependency sets; run-time \code{EXCEPT ALL} check at apply time. \\
-NFR-4 & Integrity & The database, not only the application, must reject invalid metadata. & 21 metadata tables with \code{CHECK}, \code{UNIQUE}, foreign keys, generated columns and partial unique indexes; checked by \code{test\_schema.py}. \\
-NFR-5 & Auditability & Every data change made by the cleanup step must be traceable and reversible in principle. & Each fix is stored in \code{dataset\_fixes} with the old value, new value and user. \\
-NFR-6 & Usability & Users with no SQL background must understand each screen. Plain-language labels, a pure-black dark theme and a light theme, and one consistent typeface (Space Grotesk). & Both themes implemented and captured in the screenshots in this report. \\
-NFR-7 & Portability and locality & The tool must run on one student laptop with no cloud service. & A private PostgreSQL 18 cluster is started and migrated by the application; no data leaves the machine except in the optional assistant. \\
-NFR-8 & Maintainability & Schema and code must evolve without manual steps and without regressions. & Numbered SQL migrations (001--004) applied by the migration runner; 212 automated backend tests and a frontend \code{vitest} suite, all passing. \\
+NFR-1 & Isolation & One PostgreSQL \code{LOGIN} role per workspace with privileges only on its schemas; read-only sessions, 5\,s \code{statement\_timeout}, 1{,}000-row cap. \\
+NFR-2 & Correctness & 3NF and losslessness by construction, property-tested; \code{EXCEPT ALL} check on the real rows at apply time. \\
+NFR-3 & Integrity & The database rejects bad metadata: \code{CHECK}, \code{UNIQUE}, foreign keys, generated columns, partial unique indexes. \\
+NFR-4 & Atomicity & Import, every clean-up and apply each run in one transaction; failure leaves no partial state. \\
+NFR-5 & Performance & Analysis of the 3{,}000-row sample runs inside PostgreSQL within the 5\,s bound asserted by a test; trigram search uses a GIN index. \\
+NFR-6 & Auditability & \code{\_raw} is never edited; each fix is logged in \code{dataset\_fixes} with old value, new value and row count. \\
+NFR-7 & Security & Argon2id password hashes; only SHA-256 digests of session tokens stored; every identifier quoted, every value bound. \\
+NFR-8 & Usability & Plain-English findings, light and pure-black themes, motion that respects reduced-motion settings. \\
 \bottomrule
 \end{tabularx}
 \end{table}
 
-Security deserves a short justification because the product, by design, lets a user type SQL. A single check in the application (for example rejecting statements that begin with anything other than \code{SELECT}) is easy to bypass with a comment, a semicolon or a function call that writes. QLens therefore enforces the restriction at several layers that fail independently: the database role cannot write outside its own schemas, the transaction is declared \code{READ ONLY}, a time limit stops an accidental cross join, and the result is truncated at 1,000 rows before it is serialised. The design follows the usual advice for multi-tenant PostgreSQL and the privilege model described in the PostgreSQL documentation~\cite{postgres18docs}.
+A text filter such as ``the statement must start with \code{SELECT}'' is easily bypassed with a
+comment, a CTE or a function that writes. NFR-1 is therefore met by layers that fail independently:
+privileges, a read-only transaction, a timeout and a row cap, all enforced by PostgreSQL itself
+\cite{postgres18docs}.
 
-%--------------------------------------------------------------------
 \section{Use Case Scenarios}
 \label{sec:usecases}
 
 \InputIfFileExists{figures/usecase}{}{}
 
-\Cref{fig:usecase} shows the actors and the interactions that QLens supports. There are two human actors. The \emph{owner} is the non-technical user who imports a sheet and wants a clean database. The \emph{analyst} (a student or an employee who knows some SQL) queries the result. PostgreSQL and the optional Gemini service act as supporting systems.
-
 \begin{table}[htbp]
 \centering
-\caption{Principal use cases.}
+\caption[Use cases]{Principal use cases.}
 \label{tab:usecases}
 \small
-\begin{tabularx}{\textwidth}{@{}l l X X X@{}}
+\begin{tabularx}{\textwidth}{@{}l l X c@{}}
 \toprule
-\textbf{ID} & \textbf{Actor} & \textbf{Goal} & \textbf{Main flow} & \textbf{Tables touched} \\
+\textbf{UC} & \textbf{Goal} & \textbf{Main flow and outcome} & \textbf{Status} \\
 \midrule
-UC-1 & Owner & Create an account and a workspace & Register, log in, create a workspace; a role and two schemas are provisioned & \tbl{users}, \tbl{sessions}, \tbl{workspaces} \\
-UC-2 & Owner & Import a spreadsheet & Upload file, review inferred types and preview, confirm & \tbl{datasets}, \tbl{dataset\_columns}, \code{ws\_\textless id\textgreater\_src} \\
-UC-3 & Owner & Find and fix data errors & Run analysis, review near-duplicate groups and conflicting values, accept fixes & \tbl{dataset\_fixes}, \tbl{functional\_dependencies} \\
-UC-4 & Owner & Normalise the fee register & Accept the 3NF proposal and apply it (detailed below) & \tbl{schema\_proposals}, \code{ws\_\textless id\textgreater} tables \\
-UC-5 & Analyst & Query the clean data & Write SELECT, run in the sandbox, see rows and duration & \tbl{query\_runs} \\
-UC-6 & Analyst & Save and revisit a query & Name the query, save, reopen and compare its run times & \tbl{saved\_queries}, \tbl{query\_runs} \\
-UC-7 & Analyst & Understand a slow query & Open the performance lab, read the plan tree, apply a suggested index & \tbl{explain\_snapshots}, \tbl{index\_experiments} \\
-UC-8 & Owner & Ask for help in plain language & Type a request in the chat; the assistant proposes an action for approval & \tbl{nl\_questions} \\
+UC-1 & Import a sheet & Upload or pick a sample; raw and typed copies staged; columns profiled. & \stdone \\
+UC-2 & Review data health & Keys and dependencies in plain English; reject a coincidental one. & \stdone \\
+UC-3 & Clean the data & Merge spellings, accept suggested values or all; re-analysis follows. & \stdone \\
+UC-4 & Generate a design & 3NF proposal with explanations and SQL; rename tables and columns. & \stdone \\
+UC-5 & Apply the design & One transaction; lossless check passes or everything rolls back. & \stdone \\
+UC-6 & Query the database & Read-only SQL as the workspace role; run recorded in history. & \stwip \\
+UC-7 & Ask the assistant & Questions answered; draft edited through validated tools, with undo. & \stwip \\
+UC-8 & Study a query & Plan tree, index experiment, step-through. & \stplan \\
 \bottomrule
 \end{tabularx}
 \end{table}
 
-\subsection{Detailed use case: normalise the fee register}
+\paragraph{Detailed flow of UC-5.} \emph{Precondition:} a draft proposal exists for an analyzed dataset.
+\emph{Main flow:} the user presses Apply; the server locks the draft, drops and recreates the workspace's
+main schema, creates and loads the tables, builds the \code{original\_sheet} view and runs the lossless
+check; on success the proposal and dataset become \emph{applied} and the tables are analyzed.
+\emph{Alternative:} if the check finds a difference, the server answers 409 with up to five differing
+rows and the transaction is rolled back, so the previous tables and statuses are untouched.
 
-\noindent\textbf{Actor:} owner of a coaching centre.\quad \textbf{Precondition:} logged in, workspace created, the 3,000-row fee register imported (UC-2).\quad \textbf{Postcondition:} the workspace holds four related 3NF tables whose join equals the cleaned register.
-
-\begin{enumerate}
-  \item The owner opens the Analyze screen and starts the analysis. The system computes dependencies and keys in SQL (about 0.3 s) and lists the issues found.
-  \item The system reports the near-duplicate groups. Eight rows contain spelling variants of one student name; the owner confirms the suggested canonical spelling.
-  \item The system reports that one student, Mr.\ Gupta, has two different phone numbers; five rows hold the old number. The owner selects the current number and the system rewrites those rows, writing one entry per change to \tbl{dataset\_fixes}.
-  \item The system re-runs discovery on the cleaned data. Dependencies that were previously blocked now hold: \fd{student\_name}{student\_phone, batch}, \fd{batch}{teacher} and \fd{teacher}{teacher\_phone}.
-  \item The system computes the minimal cover, synthesises the relations and displays the proposal:
-  \begin{itemize}
-    \item \tbl{students}(\code{id}, \code{student\_name}, \code{student\_phone}, \code{batch\_id});
-    \item \tbl{batches}(\code{id}, \code{batch}, \code{teacher\_id});
-    \item \tbl{teachers}(\code{id}, \code{teacher}, \code{teacher\_phone});
-    \item \tbl{fee\_register}(\code{id}, \code{student\_id}, \code{month}, \code{fee\_paid}, \code{payment\_mode}) with \code{UNIQUE}(\code{student\_id}, \code{month}).
-  \end{itemize}
-  \item The owner reviews the generated DDL and the diagram and chooses \emph{Apply}.
-  \item In a single transaction the system creates the four tables, inserts the rows, and runs the \code{EXCEPT ALL} comparison between the join of the new tables and the cleaned source. If both differences are empty the transaction commits.
-  \item If the comparison finds any difference, the transaction is rolled back, the workspace is left unchanged, and the owner is told which rows differ.
-\end{enumerate}
-
-\noindent\textbf{Alternative flows:} at step 2 or 3 the owner may reject a suggestion, in which case the dependency stays unsatisfied and the proposal keeps the affected attributes together in a wider relation; at step 6 the owner may rename tables or columns, which only changes the generated DDL.
-
-%--------------------------------------------------------------------
 \section{Other Software Engineering Methodologies}
-\label{sec:methodology}
+\label{sec:methodologies}
 
-\subsection{Iterative, test-driven development}
+\paragraph{Iterative, test-driven delivery.} The system was built in thin vertical increments in the
+order of value: database foundation and accounts, then import, discovery, clean-up, synthesis, proposal
+and apply, then querying. Each increment started from failing tests \cite{beck2002} and was followed by
+a review whose findings became regression tests; for example, a randomized test showed that plain
+synthesis without a key relation was lossy in 74 of 3{,}000 random cases, which led to the key step of
+\cref{alg:bernstein}. The schema is managed by numbered SQL migrations applied by a small runner, and
+the test database is rebuilt from them at the start of every session.
 
-The project was built in short iterations, each delivering one vertical slice that could be run and shown: first the database and migrations, then authentication and workspaces, then import, then analysis, then the proposal. Within an iteration the work was divided into small tasks. For each task a failing test was written first, the minimum code was added to make it pass, and the result was reviewed against the written specification before the next task started. Review caught real defects, for example in the handling of connection commits and in how generated names collided, and each such defect was turned into a regression test (\code{test\_conn\_commit.py}, \code{test\_naming.py}). The sequence of iterations kept the riskiest part, the algebra of dependencies and the claim of losslessness, in the earliest tested code.
-
-\subsection{Migration-based schema management}
-
-The database schema is not edited by hand. It is defined by numbered SQL files that a runner applies in order and records in a version table: \code{001\_schema.sql} (tables and constraints), \code{002\_logic.sql} (triggers, helper functions, the \code{check\_fd} and \code{is\_unique} functions), \code{003\_ingest.sql} (staging and type inference) and \code{004\_analysis.sql} (analysis support and views). A fresh clone therefore reaches exactly the same schema as the developer's machine, and \code{test\_migrate.py} verifies that running the migrations twice is harmless.
-
-\subsection{Test plan and results}
-
-\Cref{tab:testplan} lists the backend test files, grouped by the component they verify. Most tests run against a real PostgreSQL instance created for the test session, because the central logic of the system lives in SQL and cannot be meaningfully tested against a mock.
+\paragraph{Test results.} \Cref{tab:tests} summarizes the suites. Database tests run against a real
+PostgreSQL 18 instance, because the central logic lives in SQL and cannot be meaningfully mocked.
 
 \begin{table}[htbp]
 \centering
-\caption{Backend test plan.}
-\label{tab:testplan}
+\caption[Test summary]{Automated tests (latest full run: 229 backend cases and 63 frontend tests, all passing).}
+\label{tab:tests}
 \small
-\begin{tabularx}{\textwidth}{@{}l X@{}}
+\begin{tabularx}{\textwidth}{@{}l r X@{}}
 \toprule
-\textbf{Test file (\code{backend/tests})} & \textbf{What it verifies} \\
+\textbf{Area} & \textbf{Cases} & \textbf{What is verified} \\
 \midrule
-\code{test\_migrate.py} & Migrations apply in order to an empty cluster and are idempotent. \\
-\code{test\_schema.py} & Metadata constraints: \code{CHECK}, \code{UNIQUE}, foreign keys, generated columns, partial unique indexes, the \code{touch\_updated\_at} and \code{record\_query\_run} triggers, and the three reporting views. \\
-\code{test\_auth.py} & Registration, argon2 verification, hashed session tokens, cookie behaviour, rejection of bad credentials. \\
-\code{test\_workspaces.py} & Per-workspace role and schema creation, isolation between workspaces, \code{READ ONLY} and timeout enforcement. \\
-\code{test\_conn\_commit.py} & Connection helper commits and rolls back correctly. \\
-\code{test\_parse.py} & CSV and XLSX parsing, header and delimiter detection, odd encodings and empty cells. \\
-\code{test\_stage.py} & Staging of raw cells and SQL type inference, including day-first dates. \\
-\code{test\_ingest\_routes.py} & Upload endpoints and error responses. \\
-\code{test\_samples.py} & Sample generators are deterministic and contain the planted errors (8 name variants, 5 stale phone rows). \\
-\code{test\_discover.py} & Dependency and candidate-key discovery on known tables, including the fee register. \\
-\code{test\_cleanup.py} & Near-duplicate grouping, inconsistency detection, fixes, audit log and accept-all. \\
-\code{test\_fd\_algebra.py} & Attribute closure, minimal cover and Bernstein synthesis, including property tests over thousands of random dependency sets that assert every output relation is in 3NF and that the decomposition is lossless and dependency-preserving. \\
-\code{test\_naming.py} & Table and column naming rules and collision handling. \\
-\code{test\_proposal.py} & 3NF proposal end to end: foreign-key substitution, key choice, generated DDL executes and rebuilds the original rows. \\
+Schema, migrations, auth, workspaces & 39 & constraints, generated columns, triggers, views; role and schema set-up \\
+Import (parse, stage, routes, samples) & 39 & encodings, delimiters, header names, type inference, planted errors \\
+Discovery and clean-up & 53 & \code{check\_fd}, keys, noise rules, trigram groups, fixes, rollback \\
+FD algebra & 19 & closure, minimal cover, synthesis; 900 random cases checked for 3NF and losslessness \\
+Naming, proposal and apply & 79 & FK substitution, renames, generated SQL on random sheets, apply, rollback, catalog \\
+Frontend (Vitest) & 63 & API client, formatting, lane colours, dashboard and analysis view models \\
 \bottomrule
 \end{tabularx}
 \end{table}
-
-\paragraph{Results.} At the time of writing, 212 backend tests pass in the latest full run, including the property-based tests of third normal form and losslessness. The React interface is tested with \code{vitest}, which exercises the formatting helpers, the API client and the main components; this suite also passes. Tests for the apply step, the query sandbox interface and the later features (performance lab, visualiser, assistant) are written together with those features and are not yet part of the totals.
