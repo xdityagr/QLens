@@ -69,9 +69,10 @@ class GeminiModel:
 
         self.name = model
         self._types = types
-        # One retry for a brief 429/503; each attempt is bounded by the timeout.
+        # One retry for a brief server-side hiccup; each attempt is bounded by the timeout. Not on 429: the
+        # free tier's quota is per minute, so a quick retry only spends another request.
         self._client = genai.Client(api_key=api_key, http_options=types.HttpOptions(
-            timeout=timeout_ms, retry_options=types.HttpRetryOptions(attempts=2)))
+            timeout=timeout_ms, retry_options=types.HttpRetryOptions(attempts=2, http_status_codes=[500, 503, 504])))
 
     def _contents(self, history: list[Turn]) -> list:
         t = self._types
