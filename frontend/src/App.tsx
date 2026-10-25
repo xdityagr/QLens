@@ -6,13 +6,18 @@ import { SignupPage } from "./features/auth/SignupPage"
 import { AnalyzePage } from "./features/analyze/AnalyzePage"
 import { DesignPage } from "./features/design/DesignPage"
 import { useMe } from "./features/auth/useAuth"
+import { HistoryPage } from "./features/history/HistoryPage"
 import { ImportPage } from "./features/import/ImportPage"
 import { LandingPage } from "./features/landing/LandingPage"
+import { QueryPage } from "./features/query/QueryPage"
 import { DashboardPage } from "./features/workspaces/DashboardPage"
 import { StepPlaceholder } from "./features/workspaces/StepPlaceholder"
 import { WorkspaceLayout } from "./features/workspaces/WorkspaceLayout"
 import { ApiError } from "./lib/api"
-import { STEPS } from "./lib/steps"
+import { STEPS, type StepKey } from "./lib/steps"
+
+// Steps with a real screen; the rest still get StepPlaceholder.
+const BUILT = new Set<StepKey>(["import", "analyze", "design", "query", "history"])
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -53,7 +58,9 @@ export default function App() {
               <Route path="import" element={<ImportPage />} />
               <Route path="analyze" element={<AnalyzePage />} />
               <Route path="design" element={<DesignPage />} />
-              {STEPS.filter((s) => s.key !== "import" && s.key !== "analyze" && s.key !== "design").map((s) => (
+              <Route path="query" element={<QueryPage />} />
+              <Route path="history" element={<HistoryPage />} />
+              {STEPS.filter((s) => !BUILT.has(s.key)).map((s) => (
                 <Route key={s.key} path={s.key} element={<StepPlaceholder step={s.key} />} />
               ))}
             </Route>
