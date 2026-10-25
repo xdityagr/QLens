@@ -1,0 +1,89 @@
+import type { ApiErrorBody, UserOut, WorkspaceOut } from "./types"
+
+export class ApiError extends Error {
+  readonly status: number
+  readonly code: string
+  readonly detail: unknown
+
+  constructor(status: number, code: string, message: string, detail?: unknown) {
+    super(message)
+    this.name = "ApiError"
+    this.status = status
+    this.code = code
+    this.detail = detail
+  }
+}
+
+export type ApiInit = RequestInit & { json?: unknown }
+
+const MOCK = import.meta.env.VITE_MOCK === "1"
+
+export async function api<T>(path: string, init: ApiInit = {}): Promise<T> {
+  const { json, headers, ...rest } = init
+  const h = new Headers(headers)
+  h.set("Accept", "application/json")
+  let body = rest.body
+  if (json !== undefined) {
+    h.set("Content-Type", "application/json")
+    body = JSON.stringify(json)
+  }
+
+  // Dev-only fake backend (npm run dev:mock). MOCK is a build-time constant, so
+  // a normal build drops this branch and never ships the mock module.
+  if (MOCK) {
+    const { mockFetch } = await import("./mock")
+    const res = await mockFetch(path, { method: rest.method ?? "GET", json })
+    return handle<T>(res.status, res.body)
+  }
+
+  let res: Response
+  try {
+    res = await fetch(path, { ...rest, body, headers: h, credentials: "include" })
+  } catch {
+    throw new ApiError(0, "network_error", "Can't reach the QLens server. Check that the backend is running on port 8000.")
+  }
+  if (res.status === 204) return undefined as T
+  const text = await res.text()
+  let parsed: unknown = undefined
+  if (text) {
+    try {
+      parsed = JSON.parse(text)
+    } catch {
+      parsed = text
+    }
+  }
+  return handle<T>(res.status, parsed)
+}
+
+function handle<T>(status: number, body: unknown): T {
+  if (status >= 200 && status < 300) return body as T
+  const err = (body as ApiErrorBody | undefined)?.error
+  if (err) throw new ApiError(status, err.code, err.message, err.detail)
+  // FastAPI's own request-validation 422s look like {detail: [...]}
+  throw new ApiError(
+    status,
+    status === 422 ? "validation_error" : "http_error",
+    status === 422 ? "Some fields are invalid." : `Request failed (${status}).`,
+    body,
+  )
+}
+
+// ---- auth -------------------------------------------------------------------
+
+export const authApi = {
+  me: () => api<UserOut>("/api/auth/me"),
+  login: (email: string, password: string) =>
+    api<UserOut>("/api/auth/login", { method: "POST", json: { email, password } }),
+  signup: (email: string, password: string, display_name: string) =>
+    api<UserOut>("/api/auth/signup", { method: "POST", json: { email, password, display_name } }),
+  logout: () => api<void>("/api/auth/logout", { method: "POST" }),
+}
+
+// ---- workspaces -------------------------------------------------------------
+
+export const workspacesApi = {
+  list: () => api<WorkspaceOut[]>("/api/workspaces"),
+  get: (id: number) => api<WorkspaceOut>(`/api/workspaces/${id}`),
+  create: (name: string) => api<WorkspaceOut>("/api/workspaces", { method: "POST", json: { name } }),
+  remove: (id: number) => api<void>(`/api/workspaces/${id}`, { method: "DELETE" }),
+}

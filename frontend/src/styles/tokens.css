@@ -1,0 +1,69 @@
+/* QLens design tokens. Neutral canvas + eight GitLens-style lanes.
+   Lane 0 is the accent. Dark is pure black, no shadows; light uses hairline borders. */
+
+:root,
+:root[data-theme="dark"] {
+  --bg: #000;
+  --surface: #0a0a0a;
+  --raised: #111111;
+  --border: #1f1f1f;
+  --text: #ededed;
+  --muted: #8b8b8b;
+
+  /* additions the base palette needs for states */
+  --border-strong: #2e2e2e;
+  --hover: #161616;
+  --faint: #4d4d4d;
+  --on-accent: #000;
+  --danger: var(--lane-7);
+  --shadow-pop: 0 0 0 1px var(--border-strong);
+  --grain-opacity: 0.07;
+
+  --lane-0: #4c9bff; /* blue */
+  --lane-1: #b083f0; /* purple */
+  --lane-2: #f778ba; /* pink */
+  --lane-3: #ff9f43; /* orange */
+  --lane-4: #3fd68b; /* green */
+  --lane-5: #2fd3d3; /* teal */
+  --lane-6: #f5d547; /* yellow */
+  --lane-7: #ff6b6b; /* red */
+
+  --accent: var(--lane-0);
+  color-scheme: dark;
+}
+
+:root[data-theme="light"] {
+  --bg: #ffffff;
+  --surface: #fafafa;
+  --raised: #ffffff;
+  --border: #e6e6e6;
+  --text: #0a0a0a;
+  --muted: #6b6b6b;
+
+  --border-strong: #d4d4d4;
+  --hover: #f3f3f3;
+  --faint: #b5b5b5;
+  --on-accent: #fff;
+  --shadow-pop: 0 1px 2px rgb(0 0 0 / 0.04), 0 8px 24px -8px rgb(0 0 0 / 0.12);
+  --grain-opacity: 0.05;
+
+  --lane-0: #1f6feb;
+  --lane-1: #8250df;
+  --lane-2: #bf3989;
+  --lane-3: #c2560c;
+  --lane-4: #1a7f37;
+  --lane-5: #0f7d7d;
+  --lane-6: #9a6700;
+  --lane-7: #cf222e;
+
+  color-scheme: light;
+}
+
+:root {
+  --radius-card: 10px;
+  --radius-control: 8px;
+  --font-ui: "Space Grotesk Variable", "Space Grotesk", ui-sans-serif, system-ui, sans-serif;
+  --font-code: "JetBrains Mono Variable", "JetBrains Mono", ui-monospace, "Cascadia Code", monospace;
+  /* feTurbulence grain, tiled. Kept as a data URI so no request and no CDN. */
+  --grain: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='220' height='220'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='3' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 0.5 0 0 0 0 0.5 0 0 0 0 0.5 0 0 0 1.6 -0.35'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+}
