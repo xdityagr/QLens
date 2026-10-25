@@ -9,11 +9,14 @@ export function NoiseBackdrop({
   intensity = 0.18,
   className = "",
   placement = "top",
+  animated = false,
 }: {
   lanes?: [number, number]
   intensity?: number
   className?: string
   placement?: "top" | "left" | "center"
+  /** slow drift of the glows (off under reduced motion); the grain itself stays still */
+  animated?: boolean
 }) {
   const [a, b] = lanes
   const pos = {
@@ -24,7 +27,7 @@ export function NoiseBackdrop({
   return (
     <div aria-hidden className={`pointer-events-none absolute inset-0 overflow-hidden ${className}`}>
       <div
-        className="absolute inset-0"
+        className={animated ? "drift absolute -inset-[12%]" : "absolute inset-0"}
         style={{
           background:
             `radial-gradient(60% 70% at ${pos[0]}, ${laneAlpha(a, intensity)}, transparent 70%),` +

@@ -34,6 +34,8 @@
 
 @layer base {
   html {
+    /* anchors and scrollIntoView land below the sticky top bar instead of under it */
+    scroll-padding-top: 5rem;
     background: var(--bg);
     color: var(--text);
     font-family: var(--font-ui);
@@ -133,7 +135,133 @@
   }
 }
 
+/* ---- Analyze screen motion (transform/opacity only) ---- */
+
+/* Slow drift for header grain gradients; never used behind data. */
+@keyframes drift {
+  0% {
+    transform: translate3d(-3%, -2%, 0) scale(1.04) rotate(0deg);
+  }
+  50% {
+    transform: translate3d(3%, 2%, 0) scale(1.1) rotate(2deg);
+  }
+  100% {
+    transform: translate3d(-1%, 3%, 0) scale(1.02) rotate(-1.5deg);
+  }
+}
+.drift {
+  animation: drift 26s ease-in-out infinite alternate;
+  will-change: transform;
+}
+/* draws an SVG path that has pathLength="1" */
+@keyframes draw {
+  from {
+    stroke-dashoffset: 1;
+  }
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+@keyframes fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+/* dots running along a selected dependency, determinant to dependent */
+@keyframes flow {
+  from {
+    stroke-dashoffset: 24;
+  }
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+@keyframes tick {
+  0% {
+    transform: scale(0.3);
+    opacity: 0;
+  }
+  60% {
+    transform: scale(1.15);
+    opacity: 1;
+  }
+  100% {
+    transform: scale(1);
+  }
+}
+@keyframes leave {
+  to {
+    opacity: 0;
+    transform: translateX(14px) scale(0.98);
+  }
+}
+@keyframes flash {
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 transparent;
+  }
+  25% {
+    box-shadow: 0 0 0 3px color-mix(in oklab, var(--lane-3) 45%, transparent);
+  }
+}
+.anim-tick {
+  animation: tick 220ms cubic-bezier(0.2, 0.8, 0.3, 1.2) both;
+}
+.anim-leave {
+  animation: leave 240ms cubic-bezier(0.4, 0, 1, 1) forwards;
+  pointer-events: none;
+}
+.anim-flash {
+  animation: flash 1.2s ease-out 1;
+}
+.anim-enter {
+  animation: pop-in 260ms cubic-bezier(0.2, 0.7, 0.2, 1) both;
+}
+
+/* dependency diagram (React Flow), fixed and fitted */
+@keyframes node-pop {
+  from {
+    opacity: 0;
+    transform: translateY(6px) scale(0.94);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+.anat-node {
+  animation: node-pop 380ms cubic-bezier(0.2, 0.7, 0.2, 1) both;
+}
+.anat-label {
+  animation: fade-in 260ms ease-out both;
+}
+.anatomy-flow .react-flow {
+  overflow: visible;
+}
+.anatomy-flow .react-flow__pane {
+  cursor: default;
+}
+.anatomy-flow .react-flow__node {
+  /* a new layout (derived rules shown, rotated for a narrow screen) glides into place */
+  transition: transform 320ms cubic-bezier(0.2, 0.7, 0.2, 1);
+}
+.anatomy-flow .react-flow__node:hover,
+.anatomy-flow .react-flow__node:focus-within {
+  z-index: 10 !important;
+}
+.anatomy-flow .react-flow__edges {
+  overflow: visible;
+}
+
 @media (prefers-reduced-motion: reduce) {
+  .drift,
+  .flow-dots {
+    animation: none !important;
+  }
+
   *,
   *::before,
   *::after {

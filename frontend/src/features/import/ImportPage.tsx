@@ -1,15 +1,4 @@
-import {
-  ArrowRight,
-  Calendar,
-  FileSpreadsheet,
-  FileUp,
-  Hash,
-  RefreshCw,
-  ToggleLeft,
-  Type,
-  X,
-  type LucideIcon,
-} from "lucide-react"
+import { ArrowRight, FileSpreadsheet, FileUp, RefreshCw, X } from "lucide-react"
 import { useRef, useState, type DragEvent } from "react"
 import { Link, useNavigate } from "react-router"
 import { Badge } from "../../components/Badge"
@@ -21,7 +10,8 @@ import { EmptyState } from "../../components/EmptyState"
 import { NoiseBackdrop } from "../../components/NoiseBackdrop"
 import { Spinner } from "../../components/Spinner"
 import { fmtInt } from "../../lib/format"
-import type { ColumnOut, DatasetDetailOut, InferredType, SampleName } from "../../lib/types"
+import { TYPE_META } from "../../lib/columnTypes"
+import type { ColumnOut, DatasetDetailOut, SampleName } from "../../lib/types"
 import { ActionError, MockGap } from "../analyze/bits"
 import { isMockGap } from "../analyze/util"
 import { useRunAnalysis } from "../analyze/queries"
@@ -73,14 +63,6 @@ const SAMPLES: Sample[] = [
     headers: ["Room", "Student", "Hostel Block", "Warden", "Date", "Meal", "Menu Item", "Attended"],
   },
 ]
-
-const TYPE_META: Record<InferredType, { label: string; icon: LucideIcon }> = {
-  integer: { label: "integer", icon: Hash },
-  numeric: { label: "numeric", icon: Hash },
-  date: { label: "date", icon: Calendar },
-  boolean: { label: "boolean", icon: ToggleLeft },
-  text: { label: "text", icon: Type },
-}
 
 export function ImportPage() {
   const { workspace } = useWorkspaceContext()

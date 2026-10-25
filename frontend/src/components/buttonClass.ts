@@ -3,8 +3,8 @@ export type Size = "sm" | "md"
 
 export const base =
   "inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-control font-medium select-none " +
-  "transition-[background-color,border-color,color,opacity] duration-150 " +
-  "disabled:cursor-not-allowed disabled:opacity-50"
+  "transition-[background-color,border-color,color,opacity,transform] duration-150 active:scale-[0.97] " +
+  "disabled:cursor-not-allowed disabled:opacity-50 disabled:active:scale-100"
 
 export const variants: Record<Variant, string> = {
   primary: "bg-accent text-on-accent hover:bg-[color-mix(in_oklab,var(--accent)_86%,var(--text))]",

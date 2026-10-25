@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest"
-import { conflictKey, groupFdsByLhs, healthSummary } from "./analysis"
-import type { AnalysisOut, DuplicateGroupOut, FDOut } from "./types"
+import { conflictKey, groupFdsByLhs, healthSummary, inconsistencyEntries } from "./analysis"
+import type { AnalysisOut, DuplicateGroupOut, FDOut, InconsistencyOut } from "./types"
 
 let nextId = 1
 function fd(lhs: string[], rhs: string, extra: Partial<FDOut> = {}): FDOut {
@@ -97,5 +97,27 @@ describe("conflictKey", () => {
     expect(conflictKey(['Say "hi"'])).toBe('["Say \\"hi\\""]')
     const u = String.fromCharCode(92) + "u"
     expect(conflictKey(["Café ₹"])).toBe(`["Caf${u}00e9 ${u}20b9"]`)
+  })
+})
+
+describe("inconsistencyEntries", () => {
+  const item = (f: FDOut): InconsistencyOut => ({ fd_id: f.id, sentence: f.sentence, lhs: f.lhs, rhs: f.rhs, conflicts: [] })
+
+  it("lists every accepted approximate dependency, with its conflicts when the backend sent them", () => {
+    const exact = fd(["batch"], "teacher")
+    const a1 = fd(["student_phone"], "student_name", { is_exact: false, violating_rows: 8 })
+    const a2 = fd(["teacher"], "teacher_phone", { is_exact: false, violating_rows: 5 })
+    const rejected = fd(["month"], "fee_paid", { is_exact: false, violating_rows: 3, accepted: false })
+    const entries = inconsistencyEntries([exact, a1, a2, rejected], [item(a2)])
+    expect(entries.map((e) => [e.fdId, e.fd?.id, e.item?.fd_id])).toEqual([
+      [a1.id, a1.id, undefined],
+      [a2.id, a2.id, a2.id],
+    ])
+  })
+
+  it("keeps an inconsistency whose dependency is no longer approximate and accepted at the end", () => {
+    const gone = fd(["teacher"], "teacher_phone")
+    const entries = inconsistencyEntries([gone], [item(gone)])
+    expect(entries.map((e) => [e.fdId, e.fd?.id])).toEqual([[gone.id, gone.id]])
   })
 })

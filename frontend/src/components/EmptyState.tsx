@@ -20,7 +20,7 @@ export function EmptyState({
     <div
       className={`relative isolate overflow-hidden rounded-card border border-border bg-surface px-6 py-14 ${className}`}
     >
-      <NoiseBackdrop lanes={lanes} intensity={0.12} placement="center" />
+      <NoiseBackdrop lanes={lanes} intensity={0.12} placement="center" animated />
       <div className="relative mx-auto flex max-w-md flex-col items-center text-center">
         {icon && (
           <div className="mb-5 grid size-11 place-items-center rounded-full border border-border-strong bg-raised text-muted">

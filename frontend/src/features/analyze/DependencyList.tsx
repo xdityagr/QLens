@@ -4,73 +4,77 @@ import { Badge } from "../../components/Badge"
 import { groupFdsByLhs } from "../../lib/analysis"
 import { laneVar } from "../../lib/lanes"
 import type { FDOut } from "../../lib/types"
-import { ActionError, ColLabel, SectionHeading } from "./bits"
-import type { ColumnIndex } from "./util"
+import { ActionError, ColLabel } from "./bits"
+import { ruleId, type ColumnIndex } from "./util"
 import { useSetAccepted } from "./queries"
 
 /**
  * Dependencies drawn like a commit graph: each determinant is a lane, each rule a node on it.
  * Lanes are assigned over all dependencies, so a group keeps its colour when derived ones are shown.
  */
-export function DependencyList({ wsId, fds, cols }: { wsId: number; fds: FDOut[]; cols: ColumnIndex }) {
-  const [showDerived, setShowDerived] = useState(false)
+export function DependencyList({
+  wsId,
+  fds,
+  cols,
+  showDerived,
+  selected,
+}: {
+  wsId: number
+  fds: FDOut[]
+  cols: ColumnIndex
+  showDerived: boolean
+  /** column picked in the diagram: its rules stay lit, the rest fade */
+  selected: string | null
+}) {
   const setAccepted = useSetAccepted(wsId)
-  const derived = fds.filter((f) => f.is_derived).length
   const groups = groupFdsByLhs(fds)
     .map((g, lane) => ({ ...g, lane, fds: g.fds.filter((f) => showDerived || !f.is_derived) }))
     .filter((g) => g.fds.length > 0)
   const visible = groups.reduce((n, g) => n + g.fds.length, 0)
+  const touches = (f: FDOut) => !selected || f.rhs === selected || f.lhs.includes(selected)
 
   return (
-    <section aria-labelledby="deps-h">
-      <SectionHeading
-        id="deps-h"
-        title="Dependencies"
-        count={visible}
-        aside={
-          derived > 0 && (
-            <label className="flex cursor-pointer items-center gap-2.5 text-[13px] text-muted select-none hover:text-text">
-              <input
-                type="checkbox"
-                className="peer sr-only"
-                checked={showDerived}
-                onChange={(e) => setShowDerived(e.target.checked)}
-              />
-              <span
-                aria-hidden
-                className="relative h-[18px] w-[30px] rounded-full bg-border-strong transition-colors peer-checked:bg-accent peer-focus-visible:outline-2 peer-focus-visible:outline-offset-2 peer-focus-visible:outline-accent after:absolute after:left-[3px] after:top-[3px] after:size-3 after:rounded-full after:bg-bg after:transition-transform peer-checked:after:translate-x-3"
-              />
-              Show derived dependencies ({derived})
-            </label>
-          )
-        }
-      >
-        Read each line as a rule the sheet follows. Ticked exact rules decide the tables in Design; untick a rule that
-        only holds by coincidence.
-      </SectionHeading>
+    <section aria-labelledby="deps-h" className="@container">
+      <h3 id="deps-h" className="mb-3 flex items-baseline gap-2.5 text-[19px] font-medium tracking-[-0.02em] text-text">
+        Dependencies
+        <span className="num text-[13px] font-normal text-faint">{visible}</span>
+      </h3>
 
       {groups.length === 0 ? (
         <p className="rounded-card border border-border bg-surface px-5 py-4 text-[14px] text-muted">
           No column determines another. Every column varies independently in this sheet.
         </p>
       ) : (
-        <div className="rounded-card border border-border bg-surface px-3 py-2 sm:px-4">
-          {groups.map((g, gi) => (
-            <div key={JSON.stringify(g.lhs)} className={gi > 0 ? "border-t border-border" : ""}>
-              <LaneGroup lhs={g.lhs} lane={g.lane} cols={cols}>
-                {g.fds.map((f, i) => (
-                  <FdRow
-                    key={f.id}
-                    fd={f}
-                    lane={g.lane}
-                    last={i === g.fds.length - 1}
-                    pending={setAccepted.isPending && setAccepted.variables?.fdId === f.id}
-                    onToggle={(accepted) => setAccepted.mutate({ fdId: f.id, accepted })}
-                  />
-                ))}
-              </LaneGroup>
-            </div>
-          ))}
+        <div className="rounded-card border border-border bg-surface">
+          <p className="border-b border-border px-4 py-3 text-[12.5px] leading-snug text-muted">
+            Ticked exact rules decide the tables in Design. Untick a rule that only holds by coincidence.
+          </p>
+          <div className="px-3 py-1">
+            {groups.map((g, gi) => (
+              <div
+                key={JSON.stringify(g.lhs)}
+                className={
+                  (gi > 0 ? "border-t border-border " : "") +
+                  "transition-opacity duration-200 " +
+                  (g.fds.some(touches) ? "" : "opacity-40")
+                }
+              >
+                <LaneGroup lhs={g.lhs} lane={g.lane} cols={cols}>
+                  {g.fds.map((f, i) => (
+                    <FdRow
+                      key={f.id}
+                      fd={f}
+                      lane={g.lane}
+                      last={i === g.fds.length - 1}
+                      dim={!touches(f)}
+                      pending={setAccepted.isPending && setAccepted.variables?.fdId === f.id}
+                      onToggle={(accepted) => setAccepted.mutate({ fdId: f.id, accepted })}
+                    />
+                  ))}
+                </LaneGroup>
+              </div>
+            ))}
+          </div>
         </div>
       )}
       {setAccepted.error && (
@@ -125,19 +129,27 @@ function FdRow({
   fd,
   lane,
   last,
+  dim,
   pending,
   onToggle,
 }: {
   fd: FDOut
   lane: number
   last: boolean
+  dim: boolean
   pending: boolean
   onToggle: (accepted: boolean) => void
 }) {
   const color = laneVar(lane)
   const id = `fd-${fd.id}`
+  // tick animation only after the user toggles, not on first paint
+  const [touched, setTouched] = useState(false)
   return (
-    <li className="relative flex min-h-11 items-center gap-3">
+    <li
+      id={ruleId(fd.id)}
+      tabIndex={-1}
+      className={`relative flex min-h-11 items-center gap-3 outline-none transition-opacity duration-200 ${dim ? "opacity-45" : ""}`}
+    >
       {/* lane: a vertical line from the group's node, ending at the last rule */}
       <span aria-hidden className="relative w-5 shrink-0 self-stretch">
         <span
@@ -166,28 +178,31 @@ function FdRow({
         className="peer sr-only"
         checked={fd.accepted}
         disabled={pending}
-        onChange={(e) => onToggle(e.target.checked)}
+        onChange={(e) => {
+          setTouched(true)
+          onToggle(e.target.checked)
+        }}
       />
       <label
         htmlFor={id}
-        className="flex min-w-0 flex-1 cursor-pointer items-center gap-3 rounded-control py-2 pr-2 peer-focus-visible:outline-2 peer-focus-visible:outline-accent"
+        className="group flex min-w-0 flex-1 cursor-pointer items-center gap-3 rounded-control py-2 pr-2 peer-focus-visible:outline-2 peer-focus-visible:outline-accent"
         title={`${fd.lhs.join(", ")} → ${fd.rhs}`}
       >
         <span
           aria-hidden
           className={
-            "grid size-4 shrink-0 place-items-center rounded-[4px] transition-colors " +
+            "grid size-4 shrink-0 place-items-center rounded-[4px] transition-[background-color,box-shadow,transform] duration-150 group-active:scale-90 " +
             (fd.accepted ? "bg-accent text-on-accent" : "ring-1 ring-inset ring-border-strong")
           }
         >
-          {fd.accepted && <Check size={11} strokeWidth={3} />}
+          {fd.accepted && <Check size={11} strokeWidth={3} className={touched ? "anim-tick" : undefined} />}
         </span>
         <span
           className={`min-w-0 flex-1 text-[14px] leading-snug ${fd.accepted ? "text-text" : "text-muted line-through decoration-faint"}`}
         >
           {fd.sentence}
         </span>
-        <span className="hidden shrink-0 items-center gap-2 sm:flex">
+        <span className="hidden shrink-0 items-center gap-2 @md:flex">
           {fd.is_derived && <span className="text-[12px] text-faint">derived</span>}
           {fd.is_exact ? <Badge lane={4}>Exact</Badge> : <Badge lane={3}>Approximate</Badge>}
         </span>

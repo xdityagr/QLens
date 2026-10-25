@@ -1,6 +1,7 @@
-import { ServerOff } from "lucide-react"
+import { Check, ServerOff } from "lucide-react"
 import { Fragment, type ReactNode } from "react"
 import { EmptyState } from "../../components/EmptyState"
+import { fmtInt } from "../../lib/format"
 import type { ColumnIndex } from "./util"
 
 /** Original header first, identifier as a quiet mono sub-label. */
@@ -95,5 +96,71 @@ export function ActionError({ error }: { error: unknown }) {
     <p role="alert" className="text-[13px] text-danger">
       {msg}
     </p>
+  )
+}
+
+/**
+ * A value to pick, as a radio chip: the value as typed, its row count, a tick when chosen.
+ * `tone` good (green) marks the value a fix will keep; accent marks the spelling a merge keeps.
+ */
+export function ChoiceChip({
+  name,
+  value,
+  rows,
+  checked,
+  onPick,
+  tone = "accent",
+  strike = false,
+  disabled = false,
+  animate = false,
+  note,
+  title,
+}: {
+  name: string
+  value: string | null
+  rows: number
+  checked: boolean
+  onPick: () => void
+  tone?: "accent" | "good"
+  strike?: boolean
+  disabled?: boolean
+  /** play the tick animation (only after the user picks, not on first render) */
+  animate?: boolean
+  note?: ReactNode
+  title?: string
+}) {
+  const c = tone === "good" ? "var(--lane-4)" : "var(--accent)"
+  return (
+    <label
+      title={title}
+      className={
+        "flex h-7 cursor-pointer items-center gap-1.5 rounded-[7px] border px-2 font-mono text-[12.5px] transition-[color,background-color,border-color,transform] duration-150 active:scale-[0.97] " +
+        (checked
+          ? "text-text"
+          : "border-border-strong text-muted hover:text-text " + (strike ? "line-through decoration-faint hover:no-underline" : "")) +
+        (disabled ? " cursor-not-allowed opacity-60" : "") +
+        " has-[:focus-visible]:outline-2 has-[:focus-visible]:outline-offset-2 has-[:focus-visible]:outline-accent"
+      }
+      style={
+        checked
+          ? {
+              borderColor: `color-mix(in oklab, ${c} 50%, transparent)`,
+              background: `color-mix(in oklab, ${c} 11%, transparent)`,
+            }
+          : undefined
+      }
+    >
+      <input type="radio" className="sr-only" name={name} checked={checked} disabled={disabled} onChange={onPick} />
+      <span
+        aria-hidden
+        className="grid size-3.5 shrink-0 place-items-center rounded-full"
+        style={checked ? { background: c, color: "var(--on-accent)" } : { boxShadow: "inset 0 0 0 1px var(--faint)" }}
+      >
+        {checked && <Check size={9} strokeWidth={3.2} className={animate ? "anim-tick" : undefined} />}
+      </span>
+      <Value v={value} />
+      <span className="text-[11px] text-faint">{fmtInt(rows)}</span>
+      {note}
+    </label>
   )
 }
