@@ -3,7 +3,9 @@ import { BrowserRouter, Navigate, Outlet, Route, Routes, useLocation } from "rea
 import { FullPageSpinner } from "./components/Spinner"
 import { LoginPage } from "./features/auth/LoginPage"
 import { SignupPage } from "./features/auth/SignupPage"
+import { AnalyzePage } from "./features/analyze/AnalyzePage"
 import { useMe } from "./features/auth/useAuth"
+import { ImportPage } from "./features/import/ImportPage"
 import { DashboardPage } from "./features/workspaces/DashboardPage"
 import { StepPlaceholder } from "./features/workspaces/StepPlaceholder"
 import { WorkspaceLayout } from "./features/workspaces/WorkspaceLayout"
@@ -14,7 +16,8 @@ const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
       refetchOnWindowFocus: false,
-      retry: (n, e) => n < 2 && !(e instanceof ApiError && e.status >= 400 && e.status < 500),
+      // 4xx and 501 (not implemented, e.g. the mock API) won't change on a retry
+      retry: (n, e) => n < 2 && !(e instanceof ApiError && ((e.status >= 400 && e.status < 500) || e.status === 501)),
     },
   },
 })
@@ -38,7 +41,9 @@ export default function App() {
             <Route path="/" element={<DashboardPage />} />
             <Route path="/w/:id" element={<WorkspaceLayout />}>
               <Route index element={<Navigate to="import" replace />} />
-              {STEPS.map((s) => (
+              <Route path="import" element={<ImportPage />} />
+              <Route path="analyze" element={<AnalyzePage />} />
+              {STEPS.filter((s) => s.key !== "import" && s.key !== "analyze").map((s) => (
                 <Route key={s.key} path={s.key} element={<StepPlaceholder step={s.key} />} />
               ))}
             </Route>

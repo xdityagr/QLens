@@ -1,4 +1,13 @@
-import type { ApiErrorBody, UserOut, WorkspaceOut } from "./types"
+import type {
+  AnalysisOut,
+  ApiErrorBody,
+  DatasetDetailOut,
+  DatasetOut,
+  FDOut,
+  SampleName,
+  UserOut,
+  WorkspaceOut,
+} from "./types"
 
 export class ApiError extends Error {
   readonly status: number
@@ -86,4 +95,43 @@ export const workspacesApi = {
   get: (id: number) => api<WorkspaceOut>(`/api/workspaces/${id}`),
   create: (name: string) => api<WorkspaceOut>("/api/workspaces", { method: "POST", json: { name } }),
   remove: (id: number) => api<void>(`/api/workspaces/${id}`, { method: "DELETE" }),
+}
+
+// ---- dataset ----------------------------------------------------------------
+
+const ws = (id: number) => `/api/workspaces/${id}`
+
+export const datasetApi = {
+  get: (wsId: number) => api<DatasetDetailOut>(`${ws(wsId)}/dataset`),
+  upload: (wsId: number, file: File) => {
+    // No Content-Type header: the browser adds the multipart boundary itself.
+    const body = new FormData()
+    body.append("file", file)
+    return api<DatasetOut>(`${ws(wsId)}/dataset`, { method: "POST", body })
+  },
+  sample: (wsId: number, name: SampleName) =>
+    api<DatasetOut>(`${ws(wsId)}/dataset/sample`, { method: "POST", json: { name } }),
+}
+
+// ---- analysis ---------------------------------------------------------------
+
+export const analysisApi = {
+  get: (wsId: number) => api<AnalysisOut>(`${ws(wsId)}/analysis`),
+  run: (wsId: number) => api<AnalysisOut>(`${ws(wsId)}/analyze`, { method: "POST" }),
+  setAccepted: (wsId: number, fdId: number, accepted: boolean) =>
+    api<FDOut>(`${ws(wsId)}/fds/${fdId}`, { method: "PATCH", json: { accepted } }),
+  merge: (wsId: number, groupId: number, canonical?: string) =>
+    api<AnalysisOut>(`${ws(wsId)}/duplicates/${groupId}/merge`, {
+      method: "POST",
+      json: canonical === undefined ? {} : { canonical },
+    }),
+  dismiss: (wsId: number, groupId: number) =>
+    api<AnalysisOut>(`${ws(wsId)}/duplicates/${groupId}/dismiss`, { method: "POST" }),
+  /** overrides: conflictKey(lhs_values) -> value to use instead of the suggestion */
+  fix: (wsId: number, fdId: number, overrides?: Record<string, string>) =>
+    api<AnalysisOut>(`${ws(wsId)}/inconsistencies/${fdId}/fix`, {
+      method: "POST",
+      json: overrides && Object.keys(overrides).length ? { overrides } : {},
+    }),
+  acceptAll: (wsId: number) => api<AnalysisOut>(`${ws(wsId)}/cleanup/accept-all`, { method: "POST" }),
 }

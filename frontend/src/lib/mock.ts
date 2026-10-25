@@ -1,5 +1,6 @@
 // Fake backend for `npm run dev:mock`, so the UI can be built before the real
-// API exists. Only auth and workspaces are faked; anything else answers 501.
+// API exists. Only auth and workspaces are faked; anything else answers 501
+// mock_not_implemented, which the Import and Analyze pages show as "needs the real backend".
 // State lives in sessionStorage so a page reload keeps you signed in.
 import type { UserOut, WorkspaceOut } from "./types"
 

@@ -3,7 +3,11 @@ import { laneVar } from "../lib/lanes"
 
 export interface GridColumn {
   name: string
+  /** original header; when given it leads and `name` becomes a mono sub-label */
+  label?: string
   type?: string
+  /** right-align cells (numbers that arrive as strings, e.g. exact decimals) */
+  numeric?: boolean
   /** lane of the table this column belongs to, if any */
   lane?: number
 }
@@ -48,11 +52,18 @@ export function DataGrid({
                 scope="col"
                 className="sticky top-0 z-10 border-b border-border bg-raised px-3 py-2 text-left font-medium text-text"
               >
-                <span className="flex items-center gap-2">
+                <span className={`flex items-center gap-2 ${c.numeric ? "justify-end" : ""}`}>
                   {c.lane !== undefined && (
                     <span aria-hidden className="size-1.5 rounded-full" style={{ background: laneVar(c.lane) }} />
                   )}
-                  {c.name}
+                  {c.label ? (
+                    <span className="flex flex-col leading-tight">
+                      <span className="font-sans text-[13px]">{c.label}</span>
+                      <span className="text-[11px] font-normal text-faint">{c.name}</span>
+                    </span>
+                  ) : (
+                    c.name
+                  )}
                   {c.type && <span className="font-normal text-faint">{c.type}</span>}
                 </span>
               </th>
@@ -70,7 +81,8 @@ export function DataGrid({
                   key={j}
                   className={
                     "max-w-[28rem] truncate border-b border-border px-3 py-1.5 text-text " +
-                    (typeof v === "number" ? "text-right tabular-nums" : "")
+                    (typeof v === "number" || columns[j]?.numeric ? "text-right tabular-nums" : "") +
+                    (typeof v === "string" ? " whitespace-pre" : "")
                   }
                 >
                   {renderCell(v)}

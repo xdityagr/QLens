@@ -75,7 +75,7 @@ export function WorkspaceLayout() {
               <dd className="num text-right text-text">{fmtInt(ws.row_count)}</dd>
               <dt className="text-muted">Columns</dt>
               <dd className="num text-right text-text">{fmtInt(ws.column_count ?? 0)}</dd>
-              {ws.table_count !== null && (
+              {ws.stage === "applied" && ws.table_count !== null && (
                 <>
                   <dt className="text-muted">Tables</dt>
                   <dd className="num text-right text-text">{fmtInt(ws.table_count)}</dd>
