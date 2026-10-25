@@ -5,7 +5,7 @@ import textwrap
 import pytest
 
 from qlens.errors import ApiError
-from qlens.query.validate import validate_select
+from qlens.query.validate import validate_select, validate_write
 
 
 def test_trailing_semicolon_and_comments():
@@ -128,3 +128,45 @@ def test_pathological_query_cannot_kill_the_process():
     """)
     r = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True, timeout=60)
     assert r.returncode == 0 and r.stdout.strip() == "survived", (r.returncode, r.stdout, r.stderr[-300:])
+
+
+# ---- validate_write: one INSERT, UPDATE or DELETE --------------------------------------------------
+
+@pytest.mark.parametrize("sql,kind,schema,table", [
+    ("UPDATE t SET a = 1 WHERE id = 2; -- done", "UPDATE", None, "t"),
+    ("INSERT INTO ws_3.t (a) VALUES (1) RETURNING id", "INSERT", "ws_3", "t"),
+    ("DELETE FROM ONLY t USING u WHERE t.id = u.id", "DELETE", None, "t"),
+    ("UPDATE t SET a = s.a FROM (SELECT 1 AS a) s", "UPDATE", None, "t"),
+    ("WITH s AS (SELECT 1 AS a) INSERT INTO t (a) SELECT a FROM s", "INSERT", None, "t"),
+    ("INSERT INTO t (a) VALUES (1) ON CONFLICT (a) DO UPDATE SET a = excluded.a", "INSERT", None, "t"),
+])
+def test_write_accepted(sql, kind, schema, table):
+    w = validate_write(sql)
+    assert (w.kind, w.schema, w.table) == (kind, schema, table)
+    assert w.sql == sql.split(";")[0]
+
+
+@pytest.mark.parametrize("sql,code", [
+    ("SELECT 1", "not_a_write"),
+    ("TRUNCATE t", "not_a_write"),
+    ("COPY t FROM STDIN", "not_a_write"),
+    ("CREATE TABLE t2 (a int)", "not_a_write"),
+    ("ALTER TABLE t ADD COLUMN b int", "not_a_write"),
+    ("DROP TABLE t", "not_a_write"),
+    ("GRANT ALL ON t TO PUBLIC", "not_a_write"),
+    ("SET ROLE qlens_app", "not_a_write"),
+    ("MERGE INTO t USING u ON t.id = u.id WHEN MATCHED THEN DELETE", "not_a_write"),
+    ("", "not_a_select"),
+    ("UPDATE t SET a = 1; DELETE FROM t", "multiple_statements"),
+    ("WITH x AS (DELETE FROM u RETURNING id) UPDATE t SET a = 1 WHERE id IN (SELECT id FROM x)", "one_write_only"),
+    ("INSERT INTO t SELECT * FROM (WITH x AS (UPDATE u SET a = 1 RETURNING *) SELECT * FROM x) s", "one_write_only"),
+    ("UPDATE t SET a = (SELECT 1 FROM u INTO v)", "syntax_error"),
+    ("UPDATE t SET a = set_config('role', 'qlens_app', false)", "forbidden_function"),
+    ("DELETE FROM t WHERE pg_read_file('x') IS NOT NULL", "forbidden_function"),
+    ("UPDATE qlens.qlens.t SET a = 1", "write_target_not_allowed"),
+    ("UPDATE t SET", "syntax_error"),
+])
+def test_write_rejections(sql, code):
+    with pytest.raises(ApiError) as e:
+        validate_write(sql)
+    assert e.value.status == 422 and e.value.code == code

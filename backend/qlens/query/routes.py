@@ -8,10 +8,11 @@ from pydantic import BaseModel, Field, field_validator
 
 from qlens import db
 from qlens.auth.deps import owned_workspace
+from qlens.data import sqlwrite
 from qlens.errors import ApiError
 from qlens.query import sandbox
-from qlens.query.sandbox import QueryError, QueryResult
-from qlens.query.validate import validate_select
+from qlens.query.sandbox import QueryError, QueryResult, WriteRefused
+from qlens.query.validate import validate_select, validate_write
 from qlens.workspaces.service import WorkspaceRow
 
 router = APIRouter(prefix="/workspaces/{workspace_id}", tags=["query"])
@@ -32,6 +33,25 @@ class QueryIn(BaseModel):
 class QueryOut(BaseModel):
     run_id: int
     result: QueryResult
+
+
+class WriteIn(BaseModel):
+    sql: SqlText
+
+
+class ReturningOut(BaseModel):
+    columns: list[dict[str, str]]
+    rows: list[list]
+    truncated: bool
+
+
+class WriteOut(BaseModel):
+    run_id: int
+    statement: Literal["INSERT", "UPDATE", "DELETE"]
+    table: str
+    row_count: int              # rows affected
+    returning: ReturningOut | None
+    duration_ms: float
 
 
 class SavedQueryIn(BaseModel):
@@ -156,6 +176,47 @@ def run_query(body: QueryIn, conn: db.Conn, ws: WorkspaceRow = Depends(owned_wor
               if isinstance(outcome, QueryError) else outcome.detail)
     # Returned, not raised: raising would roll back the request transaction and lose the history row.
     return JSONResponse(status_code=400, content={
+        "error": {"code": outcome.code, "message": outcome.message, "detail": detail}})
+
+
+@router.post("/query/write")
+def run_write(body: WriteIn, conn: db.Conn, ws: WorkspaceRow = Depends(owned_workspace)):
+    """One INSERT, UPDATE or DELETE on a generated table, committed. SELECTs never come here (see /query)."""
+    sql_text, outcome, stmt = body.sql, None, None
+    try:
+        try:
+            stmt = validate_write(body.sql)
+        except ApiError:
+            raise
+        except Exception:  # noqa: BLE001 - as in run_query: answered and recorded, whatever the checker hit
+            raise ApiError(422, "invalid_query", "This statement could not be checked. Simplify it and try again.",
+                           detail={"position": None}) from None
+        sql_text = stmt.sql
+        target = sqlwrite.writable_table(conn, ws.id, stmt.schema, stmt.table, stmt.position)
+        if not db.ws_can_write(conn, ws.id, target.name):
+            # A workspace applied before writes existed; committed now so the sandbox connection sees it.
+            db.grant_ws_writes(conn, ws.id)
+            conn.commit()
+        try:
+            outcome = sandbox.run_write(ws.id, sql_text)
+        except WriteRefused as e:
+            position = e.error.diag.statement_position
+            outcome = sqlwrite.explain_error(conn, ws.id, target, stmt.kind, e.error,
+                                           int(position) if position else None)
+    except (ApiError, QueryError) as e:
+        outcome = e
+    run_id = record_run(conn, ws.id, sql_text, "typed", "main", outcome)
+    if isinstance(outcome, QueryResult):
+        returning = (ReturningOut(columns=outcome.columns, rows=outcome.rows, truncated=outcome.truncated)
+                     if outcome.columns else None)
+        return WriteOut(run_id=run_id, statement=stmt.kind, table=stmt.table, row_count=outcome.row_count,
+                        returning=returning, duration_ms=outcome.duration_ms)
+    if isinstance(outcome, QueryError):
+        status, detail = 400, {"sqlstate": outcome.sqlstate, "position": outcome.position}
+    else:
+        status, detail = outcome.status, outcome.detail
+    # Returned, not raised, so the history row is kept (as in run_query).
+    return JSONResponse(status_code=status, content={
         "error": {"code": outcome.code, "message": outcome.message, "detail": detail}})
 
 

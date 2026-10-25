@@ -59,11 +59,13 @@ def test_privileges_hold_even_without_validator(applied_fee, other_applied_ws):
         with pytest.raises(psycopg.errors.ReadOnlySqlTransaction):
             c.execute("INSERT INTO students DEFAULT VALUES")
         c.rollback()
-        # Even with read-only switched off the role has no write privilege and no access to qlens.
+        # Even with read-only switched off the role can write only the generated tables (the Data page's
+        # SQL tab): never the imported sheet, never DDL, never qlens or another workspace.
         c.execute("SET default_transaction_read_only = off")
         c.commit()
-        for stmt in ("INSERT INTO students DEFAULT VALUES", "DELETE FROM students",
+        for stmt in ("INSERT INTO _staging DEFAULT VALUES", "DELETE FROM _raw",
                      "CREATE TABLE public.x (a int)", "SELECT * FROM qlens.users",
+                     "TRUNCATE students", "ALTER TABLE students ADD COLUMN x int",
                      f"SELECT * FROM ws_{other_applied_ws.id}.students"):
             with pytest.raises(psycopg.errors.InsufficientPrivilege):
                 c.execute(stmt)

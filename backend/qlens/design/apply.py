@@ -84,6 +84,8 @@ def apply_proposal(conn: psycopg.Connection, ws_id: int, proposal_id: int) -> Ap
                 verify = cur.fetchone()
         if verify is None:
             raise RuntimeError("the generated script has no verify step")
+        # Default privileges gave the new view write rights too; this takes them back (tables keep theirs).
+        db.grant_ws_writes(conn, ws_id)
 
         mismatch = verify["extra_rows"] + verify["missing_rows"]
         if mismatch:

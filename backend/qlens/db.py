@@ -83,6 +83,40 @@ def create_ws_schema(conn: psycopg.Connection, ws_id: int, kind: SchemaKind) -> 
     # Default privileges cover tables created later by the owning role; the explicit grant covers existing ones.
     conn.execute(sql.SQL("ALTER DEFAULT PRIVILEGES IN SCHEMA {} GRANT SELECT ON TABLES TO {}").format(schema, role))
     conn.execute(sql.SQL("GRANT SELECT ON ALL TABLES IN SCHEMA {} TO {}").format(schema, role))
+    if kind == "main":
+        # Only the generated tables can be changed (the Data page). The sheet copies (_src) and the lab stay
+        # read-only for the role, whatever SQL reaches it.
+        conn.execute(sql.SQL("ALTER DEFAULT PRIVILEGES IN SCHEMA {} GRANT INSERT, UPDATE, DELETE ON TABLES TO {}")
+                     .format(schema, role))
+        conn.execute(sql.SQL("ALTER DEFAULT PRIVILEGES IN SCHEMA {} GRANT USAGE ON SEQUENCES TO {}")
+                     .format(schema, role))
+        grant_ws_writes(conn, ws_id)
+
+
+def grant_ws_writes(conn: psycopg.Connection, ws_id: int) -> None:
+    """INSERT, UPDATE and DELETE on the generated tables of ws_<id> (and their identity sequences). Idempotent.
+
+    Called when the main schema is made and again after Apply, and lazily before a write on a workspace applied
+    before writes existed. Views (original_sheet) get no write rights: they are not something to edit.
+    """
+    schema, role = sql.Identifier(ws_schema(ws_id, "main")), sql.Identifier(ws_role(ws_id))
+    conn.execute(sql.SQL("GRANT INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA {} TO {}").format(schema, role))
+    conn.execute(sql.SQL("GRANT USAGE ON ALL SEQUENCES IN SCHEMA {} TO {}").format(schema, role))
+    views = conn.execute(
+        "SELECT c.relname FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace "
+        "WHERE n.nspname = %s AND c.relkind IN ('v', 'm')", (ws_schema(ws_id, "main"),)).fetchall()
+    for v in views:
+        name = v["relname"] if isinstance(v, dict) else v[0]
+        conn.execute(sql.SQL("REVOKE INSERT, UPDATE, DELETE ON {} FROM {}").format(
+            sql.Identifier(ws_schema(ws_id, "main"), name), role))
+
+
+def ws_can_write(conn: psycopg.Connection, ws_id: int, table: str) -> bool:
+    # A list of privileges in one call means "any of"; all three are needed.
+    target = (ws_role(ws_id), sql.Identifier(ws_schema(ws_id, "main"), table).as_string(conn))
+    row = conn.execute("SELECT has_table_privilege(%s, %s, 'INSERT') AND has_table_privilege(%s, %s, 'UPDATE') "
+                       "AND has_table_privilege(%s, %s, 'DELETE') AS ok", target * 3).fetchone()
+    return bool(row["ok"] if isinstance(row, dict) else row[0])
 
 
 def drop_ws_schema(conn: psycopg.Connection, ws_id: int, kind: SchemaKind) -> None:

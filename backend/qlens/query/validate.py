@@ -1,8 +1,9 @@
 """Static checks on user SQL before it reaches the sandbox.
 
 This is the friendly first layer: it gives specific error messages. It is not the security boundary.
-The sandbox's own guarantees (workspace role with SELECT-only grants, read-only transaction,
-statement timeout) hold even if a statement slips past these checks.
+The sandbox's own guarantees (a workspace role that can read only its own schemas and write only its
+generated tables, a read-only transaction for SELECTs, statement timeout) hold even if a statement slips
+past these checks.
 
 The statement is parsed to JSON (parse_sql_json) and walked iteratively. pglast's Cython tree builder
 recurses once per nesting level and overflows the C stack on a long `1+1+1+...` (a 12 KB query killed the
@@ -11,6 +12,7 @@ deep nesting with RecursionError instead of crashing, and the token cap bounds t
 """
 
 import json
+from dataclasses import dataclass
 from itertools import accumulate
 
 from pglast import parser
@@ -74,7 +76,10 @@ def _strip_trailing(sql_text: str, tokens) -> str:
     return sql_text[:end].rstrip()
 
 
-def _check(sql_text: str, root: dict) -> None:
+_NESTED_WRITE_IN_SELECT = ("not_a_select", "Data-modifying statements are not allowed, even inside a WITH.")
+
+
+def _check(sql_text: str, root: dict, nested_write: tuple[str, str] = _NESTED_WRITE_IN_SELECT) -> None:
     """Iterative walk over the parse tree (nested dicts and lists), so depth cannot exhaust the stack."""
     stack: list = [root]
     while stack:
@@ -91,7 +96,7 @@ def _check(sql_text: str, root: dict) -> None:
                 if val.get("lockingClause"):
                     raise _reject("not_a_select", "Row-locking clauses (FOR UPDATE/SHARE) are not allowed.")
             elif key in _DATA_MODIFYING:
-                raise _reject("not_a_select", "Data-modifying statements are not allowed, even inside a WITH.")
+                raise _reject(*nested_write)
             elif key == "FuncCall":
                 name = (val.get("funcname") or [{}])[-1].get("String", {}).get("sval")
                 if name in FORBIDDEN_FUNCTIONS:
@@ -101,7 +106,8 @@ def _check(sql_text: str, root: dict) -> None:
                 stack.append(val)
 
 
-def validate_select(sql_text: str) -> str:
+def _parse_one(sql_text: str, empty_message: str) -> tuple[list, dict]:
+    """(tokens, statement) of exactly one statement, parsed to JSON; every refusal is a 422 with a position."""
     try:
         tokens = parser.scan(sql_text)  # lexical errors (unterminated quote) surface here
         if len(tokens) > MAX_TOKENS:
@@ -118,11 +124,15 @@ def validate_select(sql_text: str) -> str:
         raise _too_complex() from None
     stmts = tree.get("stmts") or []
     if not stmts:
-        raise _reject("not_a_select", "Type a SELECT query to run.")
+        raise _reject("not_a_select", empty_message)
     if len(stmts) > 1:
         raise _reject("multiple_statements", "Run one statement at a time.",
                       _char_pos(sql_text, stmts[1].get("stmt_location")))
-    root = stmts[0]["stmt"]
+    return tokens, stmts[0]["stmt"]
+
+
+def validate_select(sql_text: str) -> str:
+    tokens, root = _parse_one(sql_text, "Type a SELECT query to run.")
     if "SelectStmt" not in root:
         raise _reject("not_a_select", "Only SELECT queries can be run here.")
     try:
@@ -130,3 +140,44 @@ def validate_select(sql_text: str) -> str:
     except RecursionError:  # pragma: no cover - the walk is iterative; kept as a backstop
         raise _too_complex() from None
     return _strip_trailing(sql_text, tokens)
+
+
+_WRITE_KINDS = {"InsertStmt": "INSERT", "UpdateStmt": "UPDATE", "DeleteStmt": "DELETE"}
+_NAMED_STATEMENTS = {"TruncateStmt": "TRUNCATE", "CopyStmt": "COPY", "MergeStmt": "MERGE"}
+
+
+@dataclass(frozen=True)
+class WriteStatement:
+    sql: str                # trimmed of trailing semicolons and comments
+    kind: str               # INSERT, UPDATE or DELETE
+    schema: str | None      # as written; None when unqualified
+    table: str
+    position: int | None    # of the table name, 1-based
+
+
+def validate_write(sql_text: str) -> WriteStatement:
+    """One INSERT, UPDATE or DELETE, and nothing else that changes data.
+
+    Which tables it may target is the caller's check (it knows the workspace); the privileges of the workspace
+    role are the real boundary: it can write only the generated tables, never the sheet copies or the lab.
+    """
+    tokens, root = _parse_one(sql_text, "Type an INSERT, UPDATE or DELETE to run.")
+    stmt_kind = next(iter(root), "")
+    if stmt_kind == "SelectStmt":
+        raise _reject("not_a_write", "This is a SELECT, which only reads; run it with Run.")
+    if stmt_kind not in _WRITE_KINDS:
+        what = _NAMED_STATEMENTS.get(stmt_kind, "Changing the tables themselves")
+        raise _reject("not_a_write", f"Only INSERT, UPDATE or DELETE can run here; {what} is not allowed.")
+    body = root[stmt_kind]
+    try:
+        # Walk the statement's parts, not the statement itself: any other INSERT/UPDATE/DELETE inside is refused.
+        _check(sql_text, body, ("one_write_only",
+                                "Only one INSERT, UPDATE or DELETE at a time; a WITH cannot change data too."))
+    except RecursionError:  # pragma: no cover - the walk is iterative; kept as a backstop
+        raise _too_complex() from None
+    rel = body["relation"]
+    if rel.get("catalogname"):
+        raise _reject("write_target_not_allowed", "Name the table without a database name.",
+                      _char_pos(sql_text, rel.get("location")))
+    return WriteStatement(_strip_trailing(sql_text, tokens), _WRITE_KINDS[stmt_kind], rel.get("schemaname"),
+                          rel["relname"], _char_pos(sql_text, rel.get("location")))

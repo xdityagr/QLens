@@ -1,8 +1,10 @@
 """Runs user SQL as the workspace's own role, in a throwaway connection.
 
 What makes this safe does not depend on parsing the SQL:
-  * the role can only SELECT from this workspace's schemas (no USAGE on `qlens` or other workspaces),
-  * the transaction is READ ONLY and rolled back at the end,
+  * the role can only read this workspace's schemas (no USAGE on `qlens` or other workspaces), and can
+    write only the generated tables of its main schema, never the sheet copies (_src) or the lab,
+  * a SELECT runs in a READ ONLY transaction (also the role's default) that is rolled back at the end;
+    only run_write() opens a READ WRITE one, for a statement already checked by validate_write,
   * statement_timeout is set per run (never above MAX_TIMEOUT_MS),
   * rows are pulled through a cursor, so a huge result never sits in memory.
 """
@@ -166,4 +168,57 @@ def run(ws_id: int, sql_text: str, *, target: Literal["main", "lab"] = "main",
     truncated = len(fetched) > max_rows
     rows = [[cell(v) for v in row] for row in fetched[:max_rows]]
     return QueryResult(columns=columns, rows=rows, row_count=len(rows), truncated=truncated,
+                       duration_ms=duration_ms)
+
+
+class WriteRefused(Exception):
+    """The database refused a write because of the data (a constraint or a value that does not fit)."""
+
+    def __init__(self, error: psycopg.Error, duration_ms: float):
+        super().__init__(str(error))
+        self.error = error
+        self.duration_ms = duration_ms
+
+
+def _refused_by_data(e: psycopg.Error) -> bool:
+    # 23: integrity constraints; 22: data exceptions (a value the column cannot hold).
+    return (e.sqlstate or "")[:2] in ("22", "23")
+
+
+def run_write(ws_id: int, sql_text: str, *, max_rows: int = 50, timeout_ms: int = MAX_TIMEOUT_MS) -> QueryResult:
+    """One INSERT, UPDATE or DELETE (already checked by validate_write), committed in its own transaction.
+
+    row_count is the number of rows affected; rows/columns hold what RETURNING gave (at most max_rows).
+    A refusal by a constraint raises WriteRefused with the database error; anything else raises QueryError.
+    """
+    conn = _connect(ws_id, "main")
+    started = perf_counter()
+    try:
+        _install_tolerant_loaders(conn)
+        # The role's sessions default to read-only; this one transaction is explicitly read-write.
+        conn.execute("SET TRANSACTION READ WRITE")
+        conn.execute("SELECT set_config('statement_timeout', %s, true)",
+                     (str(max(1, min(int(timeout_ms), MAX_TIMEOUT_MS))),))
+        started = perf_counter()
+        # prepare=True: the extended protocol refuses a second statement smuggled in after this one.
+        cur = conn.execute(sql_text, prepare=True)
+        affected = cur.rowcount
+        fetched = cur.fetchmany(max_rows + 1) if cur.description else []
+        description = cur.description or []
+        names = _type_name_map(conn, [c.type_code for c in description])
+        conn.commit()
+        duration_ms = (perf_counter() - started) * 1000
+    except psycopg.Error as e:
+        try:
+            conn.rollback()
+        except psycopg.Error:
+            pass
+        if _refused_by_data(e):
+            raise WriteRefused(e, (perf_counter() - started) * 1000) from None
+        raise _error(e, started) from None
+    finally:
+        conn.close()
+    columns = [{"name": c.name, "type": names[c.type_code]} for c in description]
+    rows = [[cell(v) for v in row] for row in fetched[:max_rows]]
+    return QueryResult(columns=columns, rows=rows, row_count=max(affected, 0), truncated=len(fetched) > max_rows,
                        duration_ms=duration_ms)
