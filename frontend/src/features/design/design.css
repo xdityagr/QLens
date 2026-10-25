@@ -119,6 +119,55 @@
   transition: opacity 200ms ease;
 }
 
+/* ---- a change made by the assistant (or a rename): removed tables fade, changed ones flash once ---- */
+@keyframes er-node-out {
+  to {
+    opacity: 0;
+    transform: scale(0.94);
+  }
+}
+.react-flow__node.er-exit {
+  pointer-events: none;
+}
+.er-exit .er-card {
+  animation: er-node-out 300ms cubic-bezier(0.4, 0, 1, 1) forwards;
+}
+/* an inset lane ring that fades in and out after the glide; two names so a second change replays it */
+@keyframes er-flash-a {
+  0%,
+  100% {
+    opacity: 0;
+  }
+  35% {
+    opacity: 1;
+  }
+}
+@keyframes er-flash-b {
+  0%,
+  100% {
+    opacity: 0;
+  }
+  35% {
+    opacity: 1;
+  }
+}
+.er-changed .er-card::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  pointer-events: none;
+  box-shadow: inset 0 0 0 1.5px var(--er-lane);
+  background: color-mix(in oklab, var(--er-lane) 9%, transparent);
+  opacity: 0;
+}
+.er-changed-a .er-card::after {
+  animation: er-flash-a 1300ms ease-in-out 380ms both;
+}
+.er-changed-b .er-card::after {
+  animation: er-flash-b 1300ms ease-in-out 380ms both;
+}
+
 /* ---- side panel + result ---- */
 @keyframes er-panel-in {
   from {
@@ -190,7 +239,10 @@
   .er-panel-in,
   .er-rise,
   .er-check path,
-  .er-pop {
+  .er-pop,
+  .er-exit .er-card,
+  .er-changed-a .er-card::after,
+  .er-changed-b .er-card::after {
     animation: none;
   }
   .er-progress {

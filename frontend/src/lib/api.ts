@@ -146,6 +146,8 @@ export const designApi = {
   get: (wsId: number) => api<ProposalOut>(`${ws(wsId)}/proposal`),
   /** build a fresh draft from the accepted dependencies */
   build: (wsId: number) => api<ProposalOut>(`${ws(wsId)}/proposal`, { method: "POST" }),
+  /** a new draft copied from the applied design, keeping its names (409 draft_exists when there is one) */
+  editApplied: (wsId: number) => api<ProposalOut>(`${ws(wsId)}/proposal/edit-applied`, { method: "POST" }),
   renameTable: (wsId: number, tableId: number, name: string) =>
     api<ProposalOut>(`${ws(wsId)}/proposal/tables/${tableId}`, { method: "PATCH", json: { name } }),
   renameColumn: (wsId: number, columnId: number, name: string) =>

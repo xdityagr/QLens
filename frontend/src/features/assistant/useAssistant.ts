@@ -1,0 +1,196 @@
+import { useQuery, useQueryClient } from "@tanstack/react-query"
+import { useCallback, useEffect, useRef, useState } from "react"
+import type { DesignChange } from "../../lib/proposalDiff"
+import { assistantApi, type AssistantContext, type AssistantReply } from "./api"
+import {
+  chipFor,
+  editSummary,
+  friendlyError,
+  presentationFor,
+  threadFromDetail,
+  UNDO_MESSAGE,
+  type EditSummary,
+  type FriendlyError,
+  type Turn,
+} from "./logic"
+
+export const conversationsKey = (wsId: number) => ["assistant", wsId, "conversations"] as const
+const conversationKey = (wsId: number, id: number) => ["assistant", wsId, "conversation", id] as const
+
+export interface EditToast {
+  key: number
+  summary: EditSummary
+}
+
+export interface AssistantOptions {
+  wsId: number
+  context: AssistantContext
+  /**
+   * Apply what a reply brings (a new design, new query runs). Returns the design changes it made, for
+   * the toast's count, or null when they can't be told.
+   */
+  onReply?: (reply: AssistantReply) => DesignChange[] | null | void
+}
+
+/**
+ * One assistant thread on one screen. The API answers in one piece (no streaming), so a message is
+ * pending until the whole reply is back; the reply then either opens the sidebar or, for a design edit,
+ * shows a toast while the canvas animates.
+ */
+export function useAssistant({ wsId, context, onReply }: AssistantOptions) {
+  const qc = useQueryClient()
+  const [conversationId, setConversationId] = useState<number | null>(null)
+  const [turns, setTurns] = useState<Turn[]>([])
+  const [pending, setPending] = useState<string | null>(null)
+  const [error, setError] = useState<{ error: FriendlyError; message: string } | null>(null)
+  const [open, setOpen] = useState(false)
+  const [toast, setToast] = useState<EditToast | null>(null)
+  const [draft, setDraft] = useState("")
+  const [loading, setLoading] = useState(false)
+  // the async ask reads these after awaits, so they live in refs as well
+  const convId = useRef<number | null>(null)
+  const busy = useRef(false)
+  const onReplyRef = useRef(onReply)
+  useEffect(() => {
+    onReplyRef.current = onReply
+  })
+
+  const ask = useCallback(
+    async (text: string) => {
+      const message = text.trim()
+      if (!message || busy.current) return
+      busy.current = true
+      setPending(message)
+      setError(null)
+      setTurns((t) => [
+        ...t.filter((x) => !x.error),
+        { key: `u${Date.now()}`, role: "user", text: message, chips: [], sqlRuns: [], fresh: false },
+      ])
+      try {
+        const reply = await assistantApi.ask(wsId, { message, conversation_id: convId.current, context })
+        convId.current = reply.conversation_id
+        setConversationId(reply.conversation_id)
+        const changes = onReplyRef.current?.(reply) ?? null
+        setTurns((t) => [
+          ...t,
+          {
+            key: `m${reply.message_id}`,
+            role: "assistant",
+            text: reply.reply,
+            intent: reply.intent,
+            chips: reply.actions.map(chipFor),
+            sqlRuns: reply.sql_runs,
+            fresh: true,
+          },
+        ])
+        const how = presentationFor(reply.intent, context)
+        if (how.toast) setToast({ key: reply.message_id, summary: editSummary(reply.actions, changes) })
+        if (how.openSidebar) setOpen(true)
+        void qc.invalidateQueries({ queryKey: conversationsKey(wsId) })
+      } catch (e) {
+        const fe = friendlyError(e)
+        if (fe.kind === "conversation") {
+          convId.current = null
+          setConversationId(null)
+        }
+        setError({ error: fe, message })
+        setTurns((t) => [
+          ...t,
+          { key: `e${Date.now()}`, role: "assistant", text: "", chips: [], sqlRuns: [], fresh: false, error: fe },
+        ])
+      } finally {
+        busy.current = false
+        setPending(null)
+      }
+    },
+    [wsId, context, qc],
+  )
+
+  /** Send the failed message again (it stays in the thread once). */
+  const retry = useCallback(() => {
+    if (!error) return
+    const message = error.message
+    setTurns((t) => {
+      const lastUser = t.map((x) => x.role).lastIndexOf("user")
+      return lastUser >= 0 && t[lastUser].text === message ? t.slice(0, lastUser) : t
+    })
+    void ask(message)
+  }, [error, ask])
+
+  const undo = useCallback(() => void ask(UNDO_MESSAGE), [ask])
+
+  const newChat = useCallback(() => {
+    if (busy.current) return
+    convId.current = null
+    setConversationId(null)
+    setTurns([])
+    setError(null)
+    setToast(null)
+  }, [])
+
+  const openConversation = useCallback(
+    async (id: number) => {
+      if (busy.current) return
+      setLoading(true)
+      setError(null)
+      try {
+        const detail = await qc.fetchQuery({
+          queryKey: conversationKey(wsId, id),
+          queryFn: () => assistantApi.conversation(wsId, id),
+          staleTime: 0,
+        })
+        convId.current = detail.id
+        setConversationId(detail.id)
+        setTurns(threadFromDetail(detail))
+        setToast(null)
+      } catch (e) {
+        const fe = friendlyError(e)
+        setTurns([
+          { key: `e${Date.now()}`, role: "assistant", text: "", chips: [], sqlRuns: [], fresh: false, error: fe },
+        ])
+      } finally {
+        setLoading(false)
+      }
+    },
+    [qc, wsId],
+  )
+
+  /** The typewriter finished: show the turn as plain text from now on. */
+  const settle = useCallback((key: string) => {
+    setTurns((t) => t.map((x) => (x.key === key && x.fresh ? { ...x, fresh: false } : x)))
+  }, [])
+
+  return {
+    context,
+    conversationId,
+    turns,
+    pending,
+    error,
+    clearError: () => setError(null),
+    open,
+    setOpen,
+    toast,
+    dismissToast: () => setToast(null),
+    draft,
+    setDraft,
+    loading,
+    ask,
+    retry,
+    undo,
+    newChat,
+    openConversation,
+    settle,
+  }
+}
+
+export type Assistant = ReturnType<typeof useAssistant>
+
+/** This screen's earlier conversations, newest first (fetched when the history menu opens). */
+export function useConversations(wsId: number, context: AssistantContext, enabled: boolean) {
+  return useQuery({
+    queryKey: conversationsKey(wsId),
+    enabled,
+    queryFn: () => assistantApi.conversations(wsId),
+    select: (all) => all.filter((c) => c.context === context),
+  })
+}

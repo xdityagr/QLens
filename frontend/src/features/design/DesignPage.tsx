@@ -10,12 +10,21 @@ import { Tabs } from "../../components/Tabs"
 import { ApiError } from "../../lib/api"
 import { STEPS } from "../../lib/steps"
 import type { ProposalOut } from "../../lib/types"
+import { DesignAssistant } from "../assistant/DesignAssistant"
 import { useWorkspaceContext } from "../workspaces/context"
 import { StepHeader } from "../workspaces/StepHeader"
 import { AppliedResult, ApplyFailure, ApplyProgress, type AppliedSummary } from "./ApplyPanel"
 import { AssistantSlot } from "./AssistantSlot"
 import { ErContext, type ErContextValue, type RenameTarget } from "./erContext"
-import { useApply, useAppliedSchema, useAssistantEnabled, useBuildProposal, useProposal, useRename } from "./queries"
+import {
+  useApply,
+  useAppliedSchema,
+  useAssistantEnabled,
+  useBuildProposal,
+  useEditApplied,
+  useProposal,
+  useRename,
+} from "./queries"
 import { SqlPanel } from "./SqlPanel"
 import { WhyPanel } from "./WhyPanel"
 
@@ -87,7 +96,9 @@ export function DesignPage() {
       </div>
     )
 
-  return <Design wsId={wsId} sheetRows={workspace.row_count} p={proposal.data} />
+  return (
+    <Design wsId={wsId} sheetRows={workspace.row_count} p={proposal.data} queryable={workspace.stage === "applied"} />
+  )
 }
 
 function Centered({ children }: { children: ReactNode }) {
@@ -98,8 +109,20 @@ function Centered({ children }: { children: ReactNode }) {
   )
 }
 
-function Design({ wsId, sheetRows, p }: { wsId: number; sheetRows: number | null; p: ProposalOut }) {
+function Design({
+  wsId,
+  sheetRows,
+  p,
+  queryable,
+}: {
+  wsId: number
+  sheetRows: number | null
+  p: ProposalOut
+  /** some design is applied, so Query has tables to run SQL on */
+  queryable: boolean
+}) {
   const build = useBuildProposal(wsId)
+  const editApplied = useEditApplied(wsId)
   const rename = useRename(wsId)
   const apply = useApply(wsId)
   const applied = p.status === "applied"
@@ -154,18 +177,18 @@ function Design({ wsId, sheetRows, p }: { wsId: number; sheetRows: number | null
     }
   }, [p, doRename, hovered, summary])
 
-  const busy = build.isPending || apply.isPending || rename.isPending
+  const busy = build.isPending || apply.isPending || rename.isPending || editApplied.isPending
   const failure = !applied && apply.error ? apply.error : null
-  const buildError = build.error
+  const buildError = build.error ?? editApplied.error
 
   const actions = applied ? (
     <>
       <Button
         icon={<FilePlus2 size={15} />}
-        loading={build.isPending}
+        loading={editApplied.isPending}
         disabled={busy}
-        onClick={() => build.mutate(undefined, { onSuccess: () => apply.reset() })}
-        title="Start a new draft from the accepted dependencies. The applied tables stay until you apply again."
+        onClick={() => editApplied.mutate(undefined, { onSuccess: () => apply.reset() })}
+        title="Start a new draft from the applied design, keeping its names. The applied tables stay until you apply again."
       >
         Edit as new draft
       </Button>
@@ -256,7 +279,11 @@ function Design({ wsId, sheetRows, p }: { wsId: number; sheetRows: number | null
             </div>
           </header>
 
-          {assistant && <AssistantSlot />}
+          {assistant && (
+            <AssistantSlot>
+              <DesignAssistant wsId={wsId} proposal={p} queryable={queryable} />
+            </AssistantSlot>
+          )}
         </section>
 
         <aside

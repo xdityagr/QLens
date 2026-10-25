@@ -41,6 +41,22 @@ export function useBuildProposal(wsId: number) {
   })
 }
 
+/** "Edit as new draft": copy the applied design into a draft that keeps its table and column names. */
+export function useEditApplied(wsId: number) {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: () => designApi.editApplied(wsId),
+    onSuccess: (p) => {
+      qc.setQueryData(proposalKey(wsId), p)
+      qc.invalidateQueries({ queryKey: proposalSqlKey(wsId) })
+    },
+    onError: (e) => {
+      // a draft already exists (another tab, or the assistant made one): show it
+      if (e instanceof ApiError && e.code === "draft_exists") qc.invalidateQueries({ queryKey: proposalKey(wsId) })
+    },
+  })
+}
+
 export function useRename(wsId: number) {
   const qc = useQueryClient()
   return useMutation({

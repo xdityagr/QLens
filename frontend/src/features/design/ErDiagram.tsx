@@ -10,14 +10,16 @@ import {
   useNodesState,
   useReactFlow,
   useStoreApi,
+  useUpdateNodeInternals,
   type EdgeProps,
   type FitViewOptions,
 } from "@xyflow/react"
 import { LayoutGrid, Maximize, Minus, Plus } from "lucide-react"
 import { useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react"
 import { IconButton } from "../../components/Button"
-import { layoutEr, type ErEdge, type ErNode } from "../../lib/graphLayout"
+import { layoutEr, nodeId, type ErEdge, type ErNode } from "../../lib/graphLayout"
 import { animateLayout, type XY } from "../../lib/layoutMotion"
+import { diffProposals, stableIds } from "../../lib/proposalDiff"
 import { useReducedMotion } from "../../lib/reveal"
 import type { TableOut } from "../../lib/types"
 import { useEr } from "./erContext"
@@ -32,11 +34,17 @@ const FIT_NARROW: FitViewOptions = { padding: { top: "150px", bottom: "72px", x:
 const FIT = typeof window !== "undefined" && window.matchMedia("(max-width: 639px)").matches ? FIT_NARROW : FIT_WIDE
 const NODE_STAGGER = 90 // ms, matches design.css
 const EDGE_STAGGER = 70
+const EXIT_MS = 320 // matches .er-exit in design.css
 
 /**
  * The proposed schema as an ER diagram on a dot grid. Tables pop in left to right, then their
  * foreign keys draw. Tables can be dragged; a rename or rebuild glides every table the user hasn't
  * moved to its new place (animateLayout), and "Tidy up" puts everything back on the layout.
+ *
+ * An assistant edit arrives as a new draft version whose tables all have new ids. Each table keeps
+ * the node id it was shown under (stableIds pairs versions by the sheet columns a table holds), so a
+ * renamed table glides and flashes instead of popping out and back in; new tables place in, removed
+ * ones fade out, and edges follow their tables.
  */
 export default function ErDiagram({ tables, children }: { tables: TableOut[]; children?: ReactNode }) {
   return (
@@ -50,48 +58,81 @@ function Canvas({ tables, children }: { tables: TableOut[]; children?: ReactNode
   const reduced = useReducedMotion()
   const rf = useReactFlow<ErNode, ErEdge>()
   const store = useStoreApi<ErNode, ErEdge>()
-  const layout = useMemo(() => layoutEr(tables), [tables])
+  // what is on the canvas now: its tables and the node id each is shown under (committed in the effect)
+  const shown = useRef<{ tables: TableOut[]; ids: Map<number, string> }>({ tables: [], ids: new Map() })
+  const layout = useMemo(() => {
+    const before = shown.current
+    const ids = stableIds(before.tables, before.ids, tables)
+    const diff = before.tables.length ? diffProposals(before.tables, tables) : null
+    return { ...withNodeIds(layoutEr(tables), ids), ids, diff }
+  }, [tables])
   const [nodes, setNodes, onNodesChange] = useNodesState<ErNode>([])
   const pinned = useRef(new Map<string, XY>())
   const cancel = useRef<() => void>(() => {})
+  const flip = useRef(false)
+  const updateInternals = useUpdateNodeInternals()
   // the first layout plays the full entrance; edges that mount later draw on their own
   const [firstLayout] = useState(layout)
 
   // Each new layout: place tables (first time) or glide them from where they are now.
   useEffect(() => {
-    const prev = rf.getNodes()
+    shown.current = { tables, ids: layout.ids }
+    // ghosts of tables still fading out from the previous change are not part of the layout
+    const prev = rf.getNodes().filter((n) => n.className !== "er-exit")
     const ids = new Set(layout.nodes.map((n) => n.id))
     const structural = prev.length !== ids.size || prev.some((n) => !ids.has(n.id))
     if (structural) pinned.current.clear()
-    const prevNames = new Set(prev.map((n) => n.data.table.name))
     const prevIds = new Set(prev.map((n) => n.id))
+    flip.current = !flip.current
+    const changed = `er-changed ${flip.current ? "er-changed-a" : "er-changed-b"}`
     const target: ErNode[] = layout.nodes.map((n) => {
-      const known = prevIds.has(n.id) || prevNames.has(n.data.table.name)
+      const known = prevIds.has(n.id)
+      const edited = known && layout.diff?.changedIds.has(n.data.table.id)
       return {
         ...n,
         position: pinned.current.get(n.id) ?? n.position,
-        className: known ? undefined : "er-enter",
-        style: known ? undefined : ({ "--er-order": n.data.order } as CSSProperties),
+        className: !known ? "er-enter" : edited ? changed : undefined,
+        // a table placed in by an edit waits for the others to glide first
+        style: known ? undefined : ({ "--er-order": prev.length ? 3 : n.data.order } as CSSProperties),
       }
     })
+    // removed tables fade where they stood (reduced motion: they just go)
+    const exiting: ErNode[] = reduced
+      ? []
+      : prev.filter((n) => !ids.has(n.id)).map((n) => ({ ...n, className: "er-exit", draggable: false }))
+    let exitDone = exiting.length === 0
+    const exitTimer = exitDone
+      ? undefined
+      : setTimeout(() => {
+          exitDone = true
+          setNodes((cur) => cur.filter((n) => n.className !== "er-exit"))
+        }, EXIT_MS)
     cancel.current()
-    cancel.current = animateLayout(prev, target, {
+    const stop = animateLayout(prev, target, {
       reduced,
-      alias: (n) => n.data.table.name,
       onFrame: (frame) =>
         setNodes((cur) => {
           // keep React Flow's own bookkeeping (measured size, dragging) on nodes it already knows
           const byId = new Map(cur.map((c) => [c.id, c]))
-          return frame.map((n) => {
+          const next = frame.map((n) => {
             const c = byId.get(n.id)
             return c ? { ...c, ...n } : n
           })
+          return exitDone ? next : [...next, ...exiting]
         }),
       onDone: () => {
         // refit after a rebuild, or when a rename pushed a table out of sight; otherwise leave the view alone
         if (prev.length && (structural || !allVisible())) void rf.fitView({ ...FIT, duration: reduced ? 0 : 450 })
       },
     })
+    // A kept node whose table is a new version has new column ids, so new handle ids: React Flow
+    // must re-measure its handles or the edges into it can't find their ends.
+    const remeasure = requestAnimationFrame(() => updateInternals(layout.nodes.map((n) => n.id)))
+    cancel.current = () => {
+      stop()
+      clearTimeout(exitTimer)
+      cancelAnimationFrame(remeasure)
+    }
     return () => cancel.current()
     // `reduced` only matters at the moment a layout starts
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -201,8 +242,8 @@ function FkEdge({
   })
   const color = data?.color ?? "var(--muted)"
   const delay = data?.delay ?? 0
-  const sId = Number(source.slice(2))
-  const tId = Number(target.slice(2))
+  const sId = data?.sourceTable ?? Number(source.slice(2))
+  const tId = data?.targetTable ?? Number(target.slice(2))
   // the caps sit just outside the cards (handles are on the card edge, under the node layer)
   const out = (pos: typeof sourcePosition) => (pos === "left" ? -4 : pos === "right" ? 4 : 0)
   const focus = er.hovered !== null
@@ -239,4 +280,32 @@ function FkEdge({
       />
     </g>
   )
+}
+
+/**
+ * The layout with each table under its stable node id. Edges are keyed by the tables they join, so an
+ * edge between the same two tables stays mounted (and re-routes) across versions instead of redrawing.
+ */
+function withNodeIds(base: { nodes: ErNode[]; edges: ErEdge[] }, ids: Map<number, string>) {
+  const byNode = new Map<string, { id: string; table: number }>()
+  for (const [table, id] of ids) byNode.set(nodeId(table), { id, table })
+  const seen = new Map<string, number>()
+  const edges: ErEdge[] = base.edges.map((e) => {
+    const s = byNode.get(e.source)
+    const t = byNode.get(e.target)
+    const source = s?.id ?? e.source
+    const target = t?.id ?? e.target
+    const key = `${source}>${target}`
+    const n = seen.get(key) ?? 0
+    seen.set(key, n + 1)
+    return {
+      ...e,
+      id: `fk:${key}:${n}`,
+      source,
+      target,
+      data: { ...e.data!, sourceTable: s?.table, targetTable: t?.table },
+    }
+  })
+  const nodes = base.nodes.map((n) => ({ ...n, id: ids.get(n.data.table.id) ?? n.id }))
+  return { nodes, edges }
 }

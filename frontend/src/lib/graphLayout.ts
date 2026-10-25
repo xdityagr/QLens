@@ -20,6 +20,9 @@ export type FkEdgeData = {
   color: string
   order: number
   /** ms before the edge draws in, set by the diagram */ delay?: number
+  /** table ids at either end, set by the diagram when node ids are kept stable across versions */
+  sourceTable?: number
+  targetTable?: number
 }
 export type ErEdge = Edge<FkEdgeData, "fk">
 

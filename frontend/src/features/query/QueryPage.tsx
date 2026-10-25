@@ -9,6 +9,7 @@ import { ApiError } from "../../lib/api"
 import { useAssistantEnabled } from "../../lib/config"
 import { useAppliedSchema } from "../../lib/schema"
 import { locateError, tablesInSql } from "../../lib/sqlText"
+import { QueryAssistant } from "../assistant/QueryAssistant"
 import { useWorkspaceContext } from "../workspaces/context"
 import { StepHeader } from "../workspaces/StepHeader"
 import type { QueryErrorDetail, QueryableTable, SavedQueryOut } from "./api"
@@ -194,8 +195,19 @@ function QueryWorkbench({ wsId }: { wsId: number }) {
         limit.
       </StepHeader>
 
-      {/* Reserved for the English-to-SQL assistant (a later task). Nothing renders until /api/config turns it on. */}
-      {assistantOn && <div data-slot="assistant" className="mb-5" />}
+      {/* The assistant (asks, answers, writes and runs SELECTs); only when /api/config turns it on. */}
+      {assistantOn && (
+        <div data-slot="assistant" className="mb-6">
+          <QueryAssistant
+            wsId={wsId}
+            tables={tables}
+            onInsertSql={(text) => {
+              setDraft({ sql: text, savedId: null })
+              editor.current?.focus()
+            }}
+          />
+        </div>
+      )}
 
       <div className="grid gap-6 lg:grid-cols-[244px_minmax(0,1fr)] lg:gap-8">
         <aside className="scrollbar-thin order-2 min-w-0 lg:order-1 lg:sticky lg:top-20 lg:max-h-[calc(100dvh-6.5rem)] lg:self-start lg:overflow-y-auto lg:pr-1">
