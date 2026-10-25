@@ -98,8 +98,8 @@ function OkResult({ outcome, dim }: { outcome: Extract<RunOutcome, { kind: "ok" 
         <p className="mb-2.5 flex items-start gap-2 rounded-control border border-[color-mix(in_oklab,var(--lane-3)_35%,transparent)] bg-[color-mix(in_oklab,var(--lane-3)_8%,transparent)] px-3 py-2 text-[13px] text-text">
           <Info size={15} className="mt-0.5 shrink-0 text-lane-3" />
           <span>
-            More than {fmtInt(result.row_count)} rows matched, so only the first {fmtInt(result.row_count)} are shown.
-            Narrow the query with WHERE, or aggregate with GROUP BY, to see everything that matters.
+            Showing the first {fmtInt(result.row_count)} rows; the query returns more. Narrow it with WHERE, or
+            aggregate with GROUP BY, to see everything that matters.
           </span>
         </p>
       )}
@@ -135,6 +135,16 @@ const ERROR_COPY: Record<QueryErrorCode, { title: string; hint?: string; icon: R
   forbidden_function: {
     title: "Blocked function",
     hint: "Functions that touch the server itself (files, settings, other sessions) are blocked in the sandbox.",
+    icon: <Ban size={16} />,
+  },
+  invalid_query: {
+    title: "Couldn't check this query",
+    hint: "QLens checks every query before running it, and this one couldn't be checked. Simplify it and try again.",
+    icon: <AlertTriangle size={16} />,
+  },
+  query_too_complex: {
+    title: "Too large or too deeply nested",
+    hint: "Split it into simpler parts: fewer nested subqueries or a shorter statement.",
     icon: <Ban size={16} />,
   },
 }

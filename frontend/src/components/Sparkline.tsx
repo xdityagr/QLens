@@ -30,6 +30,8 @@ export function Sparkline({
     .slice(d.lastIndexOf("L") + 1)
     .split(",")
     .map(Number)
+  // a new run redraws the line, even once the series is a fixed-length window of recent runs
+  const drawKey = `${values.length}:${values[values.length - 1]}`
   return (
     <svg
       width={width}
@@ -42,8 +44,7 @@ export function Sparkline({
     >
       <g transform={`translate(${pad} ${pad})`}>
         <path
-          // a new point redraws the line
-          key={values.length}
+          key={drawKey}
           d={d}
           pathLength={1}
           fill="none"
@@ -59,7 +60,7 @@ export function Sparkline({
           r={2}
           fill={color}
           className="animate-[fade-in_200ms_ease-out_520ms_both]"
-          key={`d${values.length}`}
+          key={`d${drawKey}`}
         />
       </g>
     </svg>

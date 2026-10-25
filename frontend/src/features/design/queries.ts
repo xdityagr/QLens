@@ -1,12 +1,12 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
-import { api, ApiError, designApi } from "../../lib/api"
+import { ApiError, designApi } from "../../lib/api"
+import { schemaKey } from "../../lib/schema"
 import type { ApplyOut, ProposalOut } from "../../lib/types"
 import { refreshWorkspace } from "../import/queries"
 import type { RenameTarget } from "./erContext"
 
 export const proposalKey = (wsId: number) => ["proposal", wsId] as const
 export const proposalSqlKey = (wsId: number) => ["proposal", wsId, "sql"] as const
-export const schemaKey = (wsId: number) => ["schema", wsId, "main"] as const
 
 /**
  * The design to show: the draft if there is one, else the applied design. When neither exists yet
@@ -83,28 +83,6 @@ export function useApply(wsId: number) {
   })
 }
 
-/** Row counts of the tables that really exist, read from the catalog (for an applied design on reload). */
-export function useAppliedSchema(wsId: number, enabled: boolean) {
-  return useQuery({ queryKey: schemaKey(wsId), enabled, queryFn: () => designApi.schema(wsId, "main") })
-}
-
-/**
- * Whether the assistant is switched on. GET /api/config arrives with the assistant; until then it
- * answers 404, which means off, as does any other failure.
- */
-export function useAssistantEnabled() {
-  const q = useQuery({
-    queryKey: ["config"],
-    retry: false,
-    staleTime: Infinity,
-    queryFn: async () => {
-      try {
-        const c = await api<{ assistant_enabled?: boolean; assistant?: { enabled?: boolean } }>("/api/config")
-        return c?.assistant_enabled === true || c?.assistant?.enabled === true
-      } catch {
-        return false
-      }
-    },
-  })
-  return q.data === true
-}
+// Shared with the Query screen; re-exported so Design's imports stay as they were.
+export { useAppliedSchema } from "../../lib/schema"
+export { useAssistantEnabled } from "../../lib/config"

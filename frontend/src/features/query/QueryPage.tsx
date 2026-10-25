@@ -6,18 +6,13 @@ import { buttonClass } from "../../components/buttonClass"
 import { EmptyState } from "../../components/EmptyState"
 import { Spinner } from "../../components/Spinner"
 import { ApiError } from "../../lib/api"
+import { useAssistantEnabled } from "../../lib/config"
+import { useAppliedSchema } from "../../lib/schema"
 import { locateError, tablesInSql } from "../../lib/sqlText"
 import { useWorkspaceContext } from "../workspaces/context"
 import { StepHeader } from "../workspaces/StepHeader"
 import type { QueryErrorDetail, QueryableTable, SavedQueryOut } from "./api"
-import {
-  useAssistantEnabled,
-  useQuerySchema,
-  useRunQuery,
-  useSavedQueries,
-  useSaveQuery,
-  useSourceTables,
-} from "./queries"
+import { useRunQuery, useSavedQueries, useSaveQuery, useSourceTables } from "./queries"
 import "./query.css"
 import { ResultPanel, type RunOutcome } from "./ResultGrid"
 import { DeleteSavedQueryDialog, SavedQueries, SaveQueryDialog } from "./SavedQueries"
@@ -98,7 +93,7 @@ function QueryWorkbench({ wsId }: { wsId: number }) {
   const [deleting, setDeleting] = useState<SavedQueryOut | null>(null)
   const editor = useRef<SqlEditorHandle>(null)
 
-  const schemaQ = useQuerySchema(wsId)
+  const schemaQ = useAppliedSchema(wsId)
   const savedQ = useSavedQueries(wsId)
   const sourceTables = useSourceTables(wsId, true)
   const runM = useRunQuery(wsId)
@@ -152,7 +147,7 @@ function QueryWorkbench({ wsId }: { wsId: number }) {
         onError: (e) => {
           const code = e instanceof ApiError ? e.code : "network_error"
           const detail = (e instanceof ApiError ? e.detail : null) as QueryErrorDetail | null
-          const where = locateError(text, code, detail?.position)
+          const where = locateError(text, detail?.position)
           setOutcome({ kind: "error", key: Date.now(), code, message: e.message, sqlstate: detail?.sqlstate, where })
           if (where) editor.current?.markError(where.offset)
         },

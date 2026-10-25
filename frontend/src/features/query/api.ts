@@ -1,5 +1,5 @@
 import { api } from "../../lib/api"
-import type { Cell, SchemaOut } from "../../lib/types"
+import type { Cell } from "../../lib/types"
 
 // Mirrors backend/qlens/query/routes.py and sandbox.py (Task 13).
 
@@ -24,7 +24,14 @@ export interface QueryRunOut {
 }
 
 export type QueryErrorCode =
-  "timeout" | "db_error" | "not_a_select" | "multiple_statements" | "forbidden_function" | "syntax_error"
+  | "timeout"
+  | "db_error"
+  | "not_a_select"
+  | "multiple_statements"
+  | "forbidden_function"
+  | "syntax_error"
+  | "invalid_query"
+  | "query_too_complex"
 
 /** `detail` of a 400 from POST /query; validation errors carry only a position */
 export interface QueryErrorDetail {
@@ -102,7 +109,6 @@ export const queryApi = {
       method: "POST",
       json: savedQueryId ? { sql, saved_query_id: savedQueryId } : { sql },
     }),
-  schema: (wsId: number) => api<SchemaOut>(`${ws(wsId)}/schema?kind=main`),
   savedList: (wsId: number) => api<SavedQueryOut[]>(`${ws(wsId)}/saved-queries`),
   save: (wsId: number, title: string, sql_text: string) =>
     api<SavedQueryOut>(`${ws(wsId)}/saved-queries`, { method: "POST", json: { title, sql_text } }),

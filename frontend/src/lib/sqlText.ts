@@ -8,13 +8,12 @@ export interface ErrorLocation {
 
 /**
  * Where an error position (1-based, PostgreSQL's convention) falls in the text the user typed.
- * The server trims the statement before running it, so database positions count from the first
- * non-blank character; validation positions count from the original text.
+ * Both the validator and the sandbox report positions against that exact text (the server only
+ * trims trailing semicolons and whitespace), so no shifting is needed.
  */
-export function locateError(sql: string, code: string, position: number | null | undefined): ErrorLocation | null {
+export function locateError(sql: string, position: number | null | undefined): ErrorLocation | null {
   if (position === null || position === undefined || !Number.isFinite(position) || position < 1) return null
-  const shift = code === "db_error" ? sql.length - sql.trimStart().length : 0
-  const offset = Math.min(sql.length, shift + position - 1)
+  const offset = Math.min(sql.length, position - 1)
   const before = sql.slice(0, offset)
   const lineStart = before.lastIndexOf("\n") + 1
   const lineEnd = sql.indexOf("\n", offset)

@@ -1,19 +1,13 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { useMemo } from "react"
-import { api } from "../../lib/api"
 import type { DatasetOut } from "../../lib/types"
 import { refreshWorkspace, useDataset } from "../import/queries"
 import { queryApi, type QueryableTable } from "./api"
 
-export const schemaKey = (wsId: number) => ["schema", wsId, "main"] as const
 export const savedKey = (wsId: number) => ["saved-queries", wsId] as const
 export const trendKey = (wsId: number, sqId: number) => ["saved-queries", wsId, sqId, "trend"] as const
 export const historyKey = (wsId: number) => ["history", wsId] as const
 export const slowKey = (wsId: number) => ["slow-queries", wsId] as const
-
-export function useQuerySchema(wsId: number, enabled = true) {
-  return useQuery({ queryKey: schemaKey(wsId), enabled, queryFn: () => queryApi.schema(wsId) })
-}
 
 /**
  * The sheet's own tables in the src schema (on the sandbox's search_path). /schema only describes
@@ -106,26 +100,4 @@ export function useDeleteSavedQuery(wsId: number) {
     mutationFn: (sqId: number) => queryApi.remove(wsId, sqId),
     onSuccess: () => qc.invalidateQueries({ queryKey: savedKey(wsId), exact: true }),
   })
-}
-
-/**
- * Whether the assistant is switched on. GET /api/config arrives with the assistant (Task 18); until
- * then it answers 404, which means off, as does any other failure. Same cache key as the Design
- * screen's check, so the app asks once.
- */
-export function useAssistantEnabled() {
-  const q = useQuery({
-    queryKey: ["config"],
-    retry: false,
-    staleTime: Infinity,
-    queryFn: async () => {
-      try {
-        const c = await api<{ assistant_enabled?: boolean; assistant?: { enabled?: boolean } }>("/api/config")
-        return c?.assistant_enabled === true || c?.assistant?.enabled === true
-      } catch {
-        return false
-      }
-    },
-  })
-  return q.data === true
 }

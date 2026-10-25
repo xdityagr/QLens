@@ -6,7 +6,7 @@ describe("locateError", () => {
     const sql = "SELECT name\nFROM studnts\nWHERE 1 = 1"
     // position of the "s" of "studnts": 12 chars on line 1 + newline, then "FROM " = 5
     const pos = sql.indexOf("studnts") + 1
-    expect(locateError(sql, "syntax_error", pos)).toEqual({
+    expect(locateError(sql, pos)).toEqual({
       offset: sql.indexOf("studnts"),
       line: 2,
       column: 6,
@@ -14,25 +14,25 @@ describe("locateError", () => {
     })
   })
 
-  it("shifts database positions past leading whitespace the server trimmed", () => {
+  it("reads database positions against the text as typed, leading blank lines included", () => {
     const sql = "\n\n  SELECT nope FROM t"
-    // the server ran "SELECT nope FROM t" and reported position 8 for "nope"
-    const loc = locateError(sql, "db_error", 8)
+    // the server keeps leading whitespace, so PostgreSQL reports "nope" at its place in this exact text
+    const loc = locateError(sql, sql.indexOf("nope") + 1)
     expect(loc?.offset).toBe(sql.indexOf("nope"))
     expect(loc?.line).toBe(3)
     expect(loc?.column).toBe(10)
   })
 
-  it("does not shift validation positions, which count from the original text", () => {
+  it("reads validation positions against the same text", () => {
     const sql = "  SELECT 1; SELECT 2"
-    const loc = locateError(sql, "multiple_statements", sql.indexOf("SELECT 2") + 1)
+    const loc = locateError(sql, sql.indexOf("SELECT 2") + 1)
     expect(loc?.offset).toBe(sql.indexOf("SELECT 2"))
   })
 
   it("returns null without a position and clamps past the end", () => {
-    expect(locateError("SELECT 1", "timeout", null)).toBeNull()
-    expect(locateError("SELECT 1", "db_error", undefined)).toBeNull()
-    expect(locateError("SELECT", "syntax_error", 99)?.offset).toBe(6)
+    expect(locateError("SELECT 1", null)).toBeNull()
+    expect(locateError("SELECT 1", undefined)).toBeNull()
+    expect(locateError("SELECT", 99)?.offset).toBe(6)
   })
 })
 
