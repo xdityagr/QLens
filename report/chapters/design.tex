@@ -472,8 +472,8 @@ main screens with the fee register; more are in the appendix.
   \begin{figure}[htbp]\centering
   \IfFileExists{screenshots/#1.png}{\fcolorbox{rule}{white}{\includegraphics[width=0.985\textwidth,keepaspectratio]{screenshots/#1.png}}}{}
   \caption[#3]{#4}\label{fig:ui-#2}\end{figure}}
-\uishot{analyze-crop}{analyze}{Analyze screen}{Analyze screen: the row identity (candidate key) and the dependencies between columns; dashed arrows hold except on a few rows.}
-\uishot{design-erd-dark}{design}{Design screen}{Design screen: the proposed tables with primary and foreign keys, and the reason for each table.}
-\uishot{data-browse-dark}{browse}{Data page: Browse}{Data page, Browse tab: rows of the new tables with their foreign keys, and the history of changes recorded by the trigger.}
-\uishot{data-constraint-dark}{constraint}{Data page: a constraint error}{Deleting a student who still has fee records: the \code{FOREIGN KEY} constraint (\code{ON DELETE RESTRICT}) refuses the change and the page explains why.}
-\uishot{stepthrough-crop}{step}{Step through}{Step through: the query evaluated in relational-algebra order, with the number of rows after each step.}
+\uishot{final-analyze-dark}{analyze}{Analyze screen}{Analyze screen after clean-up: the row identity (candidate key Student Name + Month) and the functional dependencies between columns.}
+\uishot{final-design-proposal-dark}{design}{Design screen}{Design screen: the proposed tables with their primary keys and foreign keys (the lines), before they are applied.}
+\uishot{final-data-browse-dark}{browse}{Data page: Browse}{Data page, Browse tab: rows of the new tables with their foreign keys, and the history of changes recorded by the trigger.}
+\uishot{final-data-fk-dark}{constraint}{Data page: a constraint error}{Deleting a student who still has fee records: the \code{FOREIGN KEY} constraint (\code{ON DELETE RESTRICT}) refuses the change and the page explains why.}
+\uishot{final-stepthrough-dark}{step}{Step through}{Step through: the query evaluated in relational-algebra order; here the grouping step turns 3{,}000 rows into 8 groups.}

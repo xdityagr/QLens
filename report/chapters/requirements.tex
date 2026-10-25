@@ -83,7 +83,7 @@ in SQL (\cref{tab:tests}).
 
 \begin{table}[htbp]
 \centering
-\caption[Test summary]{Automated tests (latest runs: 496 backend and 204 frontend tests passing).}
+\caption[Test summary]{Automated tests (final run: 507 backend tests passed, 1 skipped; 204 frontend tests passed).}
 \label{tab:tests}
 \small
 \begin{tabularx}{\textwidth}{@{}l r X@{}}
@@ -96,7 +96,7 @@ Keys, dependencies, clean-up & 53 & \code{check\_fd}, \code{is\_unique}, fixes a
 Normalization algorithms & 19 & closure, canonical cover, 3NF; 900 random cases checked for 3NF and lossless join \\
 Design and apply & 79 & foreign keys, renames, generated SQL, apply, rollback \\
 SQL tab and query runner & 73 & one statement only, read-only user, time limit, row limit, run history \\
-Data page, writes, step-through, explain, assistant & 194 & constraint errors, audit trigger, privileges, timeouts, relational-algebra steps, index timing, assistant tools \\
+Data page, writes, step-through, explain, assistant & 205 & constraint errors, audit trigger, privileges, timeouts, relational-algebra steps, index timing, assistant tools \\
 Frontend & 204 & screens' data handling and formatting \\
 \bottomrule
 \end{tabularx}
