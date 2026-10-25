@@ -147,16 +147,38 @@ def _build_staging(conn: psycopg.Connection, ws_id: int, names: list[str], types
         sql.Identifier(db.ws_schema(ws_id, "src")), sql.Identifier(db.ws_role(ws_id))))
 
 
-def _record(conn: psycopg.Connection, ws_id: int, filename: str, size: int, source: str,
-            table: RawTable, types: list[InferredType]) -> int:
+def _profile(conn: psycopg.Connection, ws_id: int, names: list[str]) -> list[tuple[int, int, list[str]]]:
+    """(null_count, distinct_count, most frequent values) of each staged column, from the current data."""
     staging = _src(ws_id, "_staging")
     # One pass for every column's counts; most-frequent sample values need a query per column.
     aggs = sql.SQL(", ").join(
         sql.SQL("count({c}) AS {n}, count(DISTINCT {c}) AS {d}").format(
             c=sql.Identifier(name), n=sql.Identifier(f"nn_{i}"), d=sql.Identifier(f"d_{i}"))
-        for i, name in enumerate(table.names))
+        for i, name in enumerate(names))
     counts = conn.execute(sql.SQL("SELECT count(*) AS total, {} FROM {}").format(aggs, staging)).fetchone()
-    total = counts["total"]
+    out = []
+    for i, name in enumerate(names):
+        c = sql.Identifier(name)
+        samples = [r["v"] for r in conn.execute(
+            sql.SQL("SELECT {c}::text AS v FROM {t} WHERE {c} IS NOT NULL "
+                    "GROUP BY {c} ORDER BY count(*) DESC, {c}::text LIMIT %s").format(c=c, t=staging),
+            (SAMPLE_VALUES,))]
+        out.append((counts["total"] - counts[f"nn_{i}"], counts[f"d_{i}"], samples))
+    return out
+
+
+def refresh_column_profile(conn: psycopg.Connection, ws_id: int, dataset_id: int, names: list[str]) -> None:
+    """Re-profile columns after _staging was edited: discovery prunes keys and FDs by these counts."""
+    for name, (nulls, distinct, samples) in zip(names, _profile(conn, ws_id, names)):
+        conn.execute(
+            "UPDATE qlens.dataset_columns SET null_count = %s, distinct_count = %s, sample_values = %s "
+            "WHERE dataset_id = %s AND name = %s", (nulls, distinct, samples, dataset_id, name))
+
+
+def _record(conn: psycopg.Connection, ws_id: int, filename: str, size: int, source: str,
+            table: RawTable, types: list[InferredType]) -> int:
+    profile = _profile(conn, ws_id, table.names)
+    total = conn.execute(sql.SQL("SELECT count(*) AS n FROM {}").format(_src(ws_id, "_staging"))).fetchone()["n"]
 
     dataset_id = conn.execute(
         "INSERT INTO qlens.datasets (workspace_id, original_filename, source, file_size_bytes, row_count, "
@@ -164,16 +186,12 @@ def _record(conn: psycopg.Connection, ws_id: int, filename: str, size: int, sour
         (ws_id, filename, source, size, total, len(table.names)),
     ).fetchone()["id"]
 
-    for i, (name, label, type_) in enumerate(zip(table.names, table.labels, types)):
-        c = sql.Identifier(name)
-        samples = [r["v"] for r in conn.execute(
-            sql.SQL("SELECT {c}::text AS v FROM {t} WHERE {c} IS NOT NULL "
-                    "GROUP BY {c} ORDER BY count(*) DESC, {c}::text LIMIT %s").format(c=c, t=staging),
-            (SAMPLE_VALUES,))]
+    for i, (name, label, type_, (nulls, distinct, samples)) in enumerate(
+            zip(table.names, table.labels, types, profile)):
         conn.execute(
             "INSERT INTO qlens.dataset_columns (dataset_id, ordinal, name, label, inferred_type, null_count, "
             "distinct_count, sample_values) VALUES (%s, %s, %s, %s, %s, %s, %s, %s)",
-            (dataset_id, i + 1, name, label, type_, total - counts[f"nn_{i}"], counts[f"d_{i}"], samples),
+            (dataset_id, i + 1, name, label, type_, nulls, distinct, samples),
         )
     return dataset_id
 

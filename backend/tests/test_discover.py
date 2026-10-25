@@ -180,7 +180,7 @@ def test_routes_flow(client, api_ws):
     assert posted.status_code == 200
     body = posted.json()
     assert set(body) == {"dataset_id", "row_count", "keys", "fds", "duplicates", "inconsistencies"}
-    assert body["duplicates"] == [] and body["inconsistencies"] == []
+    assert body["duplicates"] and body["inconsistencies"]        # detail is covered in test_cleanup.py
     assert set(body["fds"][0]) == {"id", "lhs", "rhs", "is_exact", "violating_rows", "violation_ratio",
                                    "accepted", "is_derived", "sentence"}
     assert client.get(f"/api/workspaces/{api_ws}/analysis").json() == body

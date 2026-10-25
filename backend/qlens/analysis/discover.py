@@ -2,12 +2,12 @@
 import itertools
 import math
 import re
-from typing import Any
 
 import psycopg
 from pydantic import BaseModel
 
 from qlens import db
+from qlens.analysis import cleanup
 from qlens.analysis.fd_algebra import FD, minimal_cover
 from qlens.errors import ApiError
 from qlens.ingest.stage import ColumnOut
@@ -37,9 +37,8 @@ class AnalysisOut(BaseModel):
     row_count: int
     keys: list[list[str]]
     fds: list[FDOut]
-    # Filled by the duplicate / inconsistency detection that runs after the FDs.
-    duplicates: list[dict[str, Any]] = []
-    inconsistencies: list[dict[str, Any]] = []
+    duplicates: list[cleanup.DuplicateGroupOut]
+    inconsistencies: list[cleanup.InconsistencyOut]
 
 
 def lhs_eligible(col: ColumnOut) -> bool:
@@ -187,6 +186,7 @@ def analyze(conn: psycopg.Connection, dataset_id: int) -> AnalysisOut:
             for name in fd["lhs"]:
                 conn.execute("INSERT INTO qlens.fd_lhs_columns (fd_id, column_id) VALUES (%s, %s)",
                              (fd_id, by_name[name].id))
+        cleanup.find_duplicates(conn, dataset_id)
         conn.execute("UPDATE qlens.datasets SET status = 'analyzed' WHERE id = %s AND status = 'imported'",
                      (dataset_id,))
     return get_analysis(conn, dataset_id)
@@ -235,4 +235,5 @@ def get_analysis(conn: psycopg.Connection, dataset_id: int) -> AnalysisOut:
         "JOIN qlens.candidate_key_columns kc ON kc.key_id = k.id JOIN qlens.dataset_columns c ON c.id = kc.column_id "
         "WHERE k.dataset_id = %s GROUP BY k.id ORDER BY k.key_size, min(c.ordinal), max(c.ordinal)", (dataset_id,))
     return AnalysisOut(dataset_id=dataset_id, row_count=ds["row_count"], keys=[r["cols"] for r in keys],
-                       fds=load_fds(conn, dataset_id))
+                       fds=load_fds(conn, dataset_id), duplicates=cleanup.load_duplicates(conn, dataset_id),
+                       inconsistencies=cleanup.inconsistencies(conn, dataset_id))
