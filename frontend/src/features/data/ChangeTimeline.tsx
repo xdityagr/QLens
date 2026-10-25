@@ -88,7 +88,7 @@ export function ChangeTimeline({
   const firstSeen = seen ?? Infinity
 
   return (
-    <section aria-labelledby="changes-h" className="rounded-card border border-border bg-surface">
+    <section aria-labelledby="changes-h" className="min-w-0 overflow-hidden rounded-card border border-border bg-surface">
       <header className="border-b border-border px-4 py-3.5">
         <h3 id="changes-h" className="text-[15px] font-medium tracking-[-0.01em] text-text">
           Recent changes

@@ -83,6 +83,14 @@ describe("parseMarkdown", () => {
     expect(b[0].items[0].at(-1)).toEqual({ t: "text", v: " in all 3000 rows" })
   })
 
+  it("reads ---, *** and ___ as a rule, which also ends a paragraph", () => {
+    expect(parseMarkdown("Seven students tie.\n---\n**Evidence**").map((x) => x.type)).toEqual(["p", "hr", "p"])
+    expect(parseMarkdown("* * *").map((x) => x.type)).toEqual(["hr"])
+    expect(parseMarkdown("___").map((x) => x.type)).toEqual(["hr"])
+    // a list item and a table separator are not rules
+    expect(parseMarkdown("- item").map((x) => x.type)).toEqual(["ul"])
+  })
+
   it("returns nothing for blank text", () => {
     expect(parseMarkdown("  \n\n")).toEqual([])
   })

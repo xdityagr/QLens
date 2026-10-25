@@ -4,6 +4,7 @@ import { FullPageSpinner } from "./components/Spinner"
 import { LoginPage } from "./features/auth/LoginPage"
 import { SignupPage } from "./features/auth/SignupPage"
 import { AnalyzePage } from "./features/analyze/AnalyzePage"
+import { AskPage } from "./features/assistant/AskPage"
 import { DataPage } from "./features/data/DataPage"
 import { DesignPage } from "./features/design/DesignPage"
 import { useMe } from "./features/auth/useAuth"
@@ -60,6 +61,7 @@ export default function App() {
               <Route path="analyze" element={<AnalyzePage />} />
               <Route path="design" element={<DesignPage />} />
               <Route path="data" element={<DataPage />} />
+              <Route path="ask" element={<AskPage />} />
               {/* Query and Performance became the Data page's SQL tab; old links land there */}
               <Route path="query" element={<ToSqlTab />} />
               <Route path="perf" element={<ToSqlTab />} />

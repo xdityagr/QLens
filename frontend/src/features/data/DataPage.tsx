@@ -1,15 +1,11 @@
-import { Info, Lock, MessageSquareText } from "lucide-react"
-import { lazy, Suspense, useEffect, useMemo, useState } from "react"
-import { Link, useLocation, useNavigate, useSearchParams } from "react-router"
+import { Info, Lock } from "lucide-react"
+import { lazy, Suspense, useEffect, useState } from "react"
+import { Link, Navigate, useLocation, useNavigate, useSearchParams } from "react-router"
 import { buttonClass } from "../../components/buttonClass"
 import { EmptyState } from "../../components/EmptyState"
 import { Spinner } from "../../components/Spinner"
 import { Tabs, type TabItem } from "../../components/Tabs"
-import { useQueryClient } from "@tanstack/react-query"
-import { configKey, useAppConfig } from "../../lib/config"
 import { fmtInt } from "../../lib/format"
-import { useAppliedSchema } from "../../lib/schema"
-import { starterQuestions } from "../../lib/snippets"
 import { useWorkspaceContext } from "../workspaces/context"
 import { StepHeader } from "../workspaces/StepHeader"
 import { BrowseTab } from "./BrowseTab"
@@ -19,19 +15,18 @@ import type { OpenInEditor } from "./SqlTab"
 
 // The SQL tab carries CodeMirror; it loads the first time the tab opens.
 const SqlTab = lazy(() => import("./SqlTab").then((m) => ({ default: m.SqlTab })))
-// The assistant loads only when /api/config turns it on.
-const SqlAssistant = lazy(() => import("../assistant/SqlAssistant"))
-
-export type DataTab = "browse" | "sql" | "ask"
+export type DataTab = "browse" | "sql"
 const TABS: TabItem<DataTab>[] = [
   { key: "browse", label: "Browse" },
   { key: "sql", label: "SQL" },
-  { key: "ask", label: "Ask AI" },
 ]
-const isTab = (v: string | null): v is DataTab => v === "sql" || v === "ask" || v === "browse"
+const isTab = (v: string | null): v is DataTab => v === "sql" || v === "browse"
 
 export function DataPage() {
   const { workspace } = useWorkspaceContext()
+  const [params] = useSearchParams()
+  // Ask AI used to be a tab here; it is its own step now
+  if (params.get("tab") === "ask") return <Navigate to={`/w/${workspace.id}/ask`} replace />
   if (workspace.stage !== "applied") {
     return (
       <div className="mx-auto max-w-4xl px-4 py-10 sm:px-8 sm:py-12">
@@ -55,9 +50,9 @@ export function DataPage() {
 }
 
 /**
- * The Data step is where the new database gets used: Browse (rows, edits, the audit log), SQL (any SELECT, plus a
- * confirmed INSERT/UPDATE/DELETE, with plans and a step-through), and Ask AI (plain-English questions, read-only).
- * The tab lives in the URL (?tab=sql), so History, the assistant and the old /query and /perf links can open it.
+ * The Data step is where the new database gets used: Browse (rows, edits, the audit log) and SQL (any SELECT, plus
+ * a confirmed INSERT/UPDATE/DELETE, with plans and a step-through). Plain-English questions are the Ask AI step.
+ * The tab lives in the URL (?tab=sql), so History, the assistants and the old /query and /perf links can open it.
  */
 function DataHub({ wsId }: { wsId: number }) {
   const [params, setParams] = useSearchParams()
@@ -69,7 +64,7 @@ function DataHub({ wsId }: { wsId: number }) {
   const [visited, setVisited] = useState<Set<DataTab>>(() => new Set([tab]))
   if (!visited.has(tab)) setVisited(new Set([...visited, tab]))
 
-  // SQL handed over by another screen (History, Design's assistant) or by Ask AI
+  // SQL handed over by another screen (History, Ask AI, Design's assistant)
   const handed = (location.state as { open?: OpenInEditor } | null)?.open ?? null
   const [incoming, setIncoming] = useState<OpenInEditor | null>(handed)
   const [seen, setSeen] = useState(handed)
@@ -119,8 +114,12 @@ function DataHub({ wsId }: { wsId: number }) {
           )
         }
       >
-        Use the database Design created: browse and edit rows, run SQL against it, or ask a question in plain English.
-        The database's own constraints decide what is allowed, and a trigger records every change.
+        Use the database Design created: browse and edit rows, or run SQL against it. The database's own constraints
+        decide what is allowed, and a trigger records every change. For questions in plain English, use{" "}
+        <Link to={`/w/${wsId}/ask`} className="text-text underline decoration-border-strong underline-offset-[3px] hover:decoration-accent">
+          Ask AI
+        </Link>
+        .
       </StepHeader>
 
       <Tabs items={TABS} value={tab} onChange={go} className="mb-6" />
@@ -139,57 +138,9 @@ function DataHub({ wsId }: { wsId: number }) {
                 <SqlTab wsId={wsId} incoming={incoming} />
               </Suspense>
             )}
-            {key === "ask" && (
-              <AskTab
-                wsId={wsId}
-                onOpenSql={(sql) => {
-                  setIncoming({ sql })
-                  go("sql")
-                }}
-              />
-            )}
           </div>
         ) : null,
       )}
     </div>
-  )
-}
-
-/**
- * Ask AI: plain-English questions about the rows, answered inline and full width. The assistant writes a SELECT,
- * runs it read-only and answers with the rows and the SQL, which "Open in SQL tab" hands to the editor.
- */
-function AskTab({ wsId, onOpenSql }: { wsId: number; onOpenSql: (sql: string) => void }) {
-  const config = useAppConfig()
-  // useAppConfig reads "off" until the answer arrives; wait for it rather than flash "Ask AI is off"
-  const configReady = useQueryClient().getQueryState(configKey)?.status !== "pending"
-  const schema = useAppliedSchema(wsId)
-  const tables = useMemo(() => schema.data?.tables ?? [], [schema.data])
-  const starters = useMemo(() => starterQuestions(tables), [tables])
-
-  if (!configReady || schema.isPending)
-    return (
-      <div className="grid min-h-[30dvh] place-items-center">
-        <Spinner size={20} />
-      </div>
-    )
-  if (!config.assistant_enabled)
-    return (
-      <EmptyState icon={<MessageSquareText size={18} strokeWidth={1.5} />} title="Ask AI is off" lanes={[3, 1]}>
-        The server has no Gemini API key, so plain-English questions are turned off. Browse and SQL work without it.
-      </EmptyState>
-    )
-  return (
-    <Suspense fallback={<div className="h-[160px]" />}>
-      <SqlAssistant
-        wsId={wsId}
-        context="data"
-        variant="page"
-        tables={tables}
-        starters={starters}
-        onInsertSql={onOpenSql}
-        insertLabel="Open in SQL tab"
-      />
-    </Suspense>
   )
 }

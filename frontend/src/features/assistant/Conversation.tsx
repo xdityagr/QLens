@@ -4,7 +4,7 @@ import { IconButton } from "../../components/Button"
 import { Spinner } from "../../components/Spinner"
 import { fmtRelative } from "../../lib/format"
 import type { LaneOf } from "./Markdown"
-import { AssistantTurn, ThinkingTurn, UserTurn, type SqlAction } from "./Thread"
+import { AssistantTurn, ThinkingTurn, UserTurn, type SqlAction, type ThreadLayout } from "./Thread"
 import { useConversations, type Assistant } from "./useAssistant"
 
 /** Earlier conversations of this screen and New chat: the controls above a thread (sidebar or page). */
@@ -84,11 +84,13 @@ export function ThreadBody({
   laneOf,
   sqlAction,
   empty,
+  layout = "column",
 }: {
   a: Assistant
   laneOf: LaneOf
   sqlAction: SqlAction | null
   empty: ReactNode
+  layout?: ThreadLayout
 }) {
   const lastError = [...a.turns].reverse().find((t) => t.role === "assistant")?.error
   if (a.loading)
@@ -99,10 +101,10 @@ export function ThreadBody({
     )
   if (a.turns.length === 0 && a.pending === null) return <>{empty}</>
   return (
-    <div className="flex flex-col gap-5">
+    <div className={"flex flex-col " + (layout === "page" ? "gap-7" : "gap-5")}>
       {a.turns.map((t) =>
         t.role === "user" ? (
-          <UserTurn key={t.key} turn={t} />
+          <UserTurn key={t.key} turn={t} layout={layout} />
         ) : (
           <AssistantTurn
             key={t.key}
@@ -111,6 +113,7 @@ export function ThreadBody({
             sqlAction={sqlAction}
             onSettle={a.settle}
             onRetry={t.error && t.error === lastError && a.error ? a.retry : null}
+            layout={layout}
           />
         ),
       )}

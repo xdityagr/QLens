@@ -269,6 +269,138 @@
   white-space: nowrap;
 }
 
+/* ---- the Ask AI page ---- */
+.as-bar[data-variant="composer"] {
+  border-radius: 20px;
+  box-shadow: 0 18px 40px -22px rgb(0 0 0 / 0.9);
+}
+:root[data-theme="light"] .as-bar[data-variant="composer"] {
+  box-shadow:
+    0 1px 2px rgb(0 0 0 / 0.04),
+    0 12px 30px -16px rgb(0 0 0 / 0.2);
+}
+.as-bar[data-variant="composer"] .as-spectrum {
+  left: 18px;
+  right: 18px;
+}
+
+/* the conversation list: slides shut beside the thread on wide screens, a drawer on narrow ones */
+.ask-rail {
+  display: flex;
+  flex-shrink: 0;
+  width: 264px;
+  overflow: hidden;
+  background: var(--bg);
+  transition:
+    width 260ms cubic-bezier(0.2, 0.8, 0.2, 1),
+    opacity 200ms ease;
+}
+@media (min-width: 1024px) {
+  .ask-rail[data-rail="false"] {
+    width: 0;
+    opacity: 0;
+    border-right-width: 0;
+    visibility: hidden;
+    transition:
+      width 260ms cubic-bezier(0.2, 0.8, 0.2, 1),
+      opacity 160ms ease,
+      visibility 0s linear 260ms;
+  }
+}
+@media (max-width: 1023.98px) {
+  .ask-rail {
+    position: fixed;
+    top: 3.5rem;
+    bottom: 0;
+    left: 0;
+    z-index: 45;
+    width: min(300px, 86vw);
+    transform: translateX(-104%);
+    visibility: hidden;
+    transition:
+      transform 280ms cubic-bezier(0.2, 0.8, 0.2, 1),
+      visibility 0s linear 280ms;
+  }
+  .ask-rail[data-drawer="true"] {
+    transform: none;
+    visibility: visible;
+    transition: transform 280ms cubic-bezier(0.2, 0.8, 0.2, 1);
+  }
+}
+@keyframes ask-fade {
+  from {
+    opacity: 0;
+  }
+}
+.ask-scrim {
+  animation: ask-fade 200ms ease-out both;
+}
+.ask-title {
+  animation: ask-fade 220ms ease-out both;
+}
+.ask-mark {
+  animation: as-chip-in 200ms cubic-bezier(0.2, 0.7, 0.2, 1) both;
+}
+
+/* the empty page's hero settles in, one line after another */
+@keyframes ask-rise {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+.ask-rise {
+  animation: ask-rise 420ms cubic-bezier(0.2, 0.7, 0.2, 1) both;
+  animation-delay: calc(var(--i, 0) * 70ms);
+}
+.ask-starter {
+  transition:
+    background-color 160ms ease,
+    border-color 160ms ease,
+    transform 160ms cubic-bezier(0.2, 0.7, 0.2, 1);
+}
+.ask-starter:hover:not(:disabled) {
+  border-color: var(--border-strong);
+  background: var(--hover);
+  transform: translateY(-1px);
+}
+.ask-starter:active:not(:disabled) {
+  transform: scale(0.99);
+}
+.ask-starter-arrow {
+  transition:
+    transform 160ms cubic-bezier(0.2, 0.7, 0.2, 1),
+    color 160ms ease;
+}
+.ask-starter:hover:not(:disabled) .ask-starter-arrow {
+  color: var(--accent);
+  transform: translate(2px, -2px);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ask-rise,
+  .ask-scrim,
+  .ask-title,
+  .ask-mark {
+    animation: none;
+  }
+  .ask-rail,
+  .ask-rail[data-rail="false"],
+  .ask-rail[data-drawer="true"],
+  .ask-starter,
+  .ask-starter-arrow {
+    transition: none;
+  }
+  .ask-starter:hover:not(:disabled),
+  .ask-starter:hover:not(:disabled) .ask-starter-arrow {
+    transform: none;
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   .as-spectrum::before,
   .as-pending-text,

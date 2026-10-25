@@ -49,6 +49,8 @@ function renderBlock(b: Block, key: number, laneOf: LaneOf) {
         </List>
       )
     }
+    case "hr":
+      return <hr key={key} className="border-0 border-t border-border" />
     case "code":
       return (
         <pre

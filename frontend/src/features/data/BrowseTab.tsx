@@ -73,7 +73,9 @@ export function BrowseTab({ wsId }: { wsId: number }) {
         </ul>
       </nav>
 
-      <div className="grid items-start gap-6 xl:grid-cols-[minmax(0,1fr)_360px]">
+      {/* The log sits beside the grid only when the grid keeps ~760px for itself; narrower, it goes underneath.
+          The grid scrolls sideways inside its own frame, never the page. */}
+      <div className="grid min-w-0 grid-cols-[minmax(0,1fr)] items-start gap-6 min-[1440px]:grid-cols-[minmax(0,1fr)_340px]">
         <TableView key={current.name} wsId={wsId} table={current.name} laneOf={laneOf} />
         <ChangeTimeline
           data={changes.data}

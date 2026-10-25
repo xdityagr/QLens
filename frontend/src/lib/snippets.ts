@@ -229,7 +229,7 @@ function singular(name: string): string {
 }
 
 /**
- * Starter questions for the Ask AI tab, read off the same shape as the snippets: the fact table, the table its
+ * Starter questions for the Ask AI step, read off the same shape as the snippets: the fact table, the table its
  * first foreign key points at (students), the one beyond (batches), its first number and its period column.
  */
 export function starterQuestions(tables: SnippetTable[]): string[] {

@@ -1,4 +1,5 @@
-import { NavLink } from "react-router"
+import { useEffect, useRef } from "react"
+import { NavLink, useLocation } from "react-router"
 import { stepStates, type StepState } from "../lib/steps"
 import type { WorkspaceStage } from "../lib/types"
 
@@ -37,10 +38,22 @@ export function StepRail({
 }) {
   const steps = stepStates(stage)
   const lit = (i: number) => steps[i].state !== "locked" && steps[i + 1]?.state !== "locked"
+  // the horizontal rail scrolls; keep the open step in view (Ask AI and History sit past a phone's width)
+  const strip = useRef<HTMLElement>(null)
+  const { pathname } = useLocation()
+  useEffect(() => {
+    if (orientation !== "horizontal") return
+    const nav = strip.current
+    const active = nav?.querySelector<HTMLElement>('[aria-current="page"]')
+    if (!nav || !active) return
+    const r = active.getBoundingClientRect()
+    const n = nav.getBoundingClientRect()
+    nav.scrollLeft = Math.max(0, nav.scrollLeft + (r.left - n.left) - (nav.clientWidth - r.width) / 2)
+  }, [orientation, pathname])
 
   if (orientation === "horizontal") {
     return (
-      <nav aria-label="Workspace steps" className="scrollbar-thin overflow-x-auto">
+      <nav ref={strip} aria-label="Workspace steps" className="scrollbar-thin overflow-x-auto">
         <ol className="flex min-w-max items-center gap-1 px-4 py-2">
           {steps.map((s, i) => (
             <li key={s.key} className="flex items-center gap-1">

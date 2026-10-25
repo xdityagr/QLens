@@ -3,9 +3,8 @@ import { useEffect, useId, useRef, useState, type CSSProperties, type RefObject 
 import { Mark } from "../../components/Wordmark"
 import { Spinner } from "../../components/Spinner"
 import { useReducedMotion } from "../../lib/reveal"
+import { FOCUS_HINT, useFocusHotkey } from "./hotkey"
 
-const isMac = typeof navigator !== "undefined" && /Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent)
-const FOCUS_HINT = isMac ? "⌘K" : "Ctrl K"
 const CYCLE_MS = 3800
 
 export interface CommandBarProps {
@@ -50,20 +49,7 @@ export function CommandBar({
   const busy = pending !== null
   const empty = value.length === 0
 
-  useEffect(() => {
-    if (!hotkey) return
-    const onKey = (e: KeyboardEvent) => {
-      // ⌘K on a Mac, Ctrl+K elsewhere (Ctrl+K on a Mac is the editor's kill-line)
-      const mod = isMac ? e.metaKey && !e.ctrlKey : e.ctrlKey && !e.metaKey
-      if (mod && !e.altKey && e.key.toLowerCase() === "k") {
-        e.preventDefault()
-        ref.current?.focus()
-        ref.current?.select()
-      }
-    }
-    window.addEventListener("keydown", onKey)
-    return () => window.removeEventListener("keydown", onKey)
-  }, [hotkey, ref])
+  useFocusHotkey(ref, hotkey)
 
   // cycle the example only while the field is empty and idle
   const cycling = !reduced && empty && !busy && examples.length > 1

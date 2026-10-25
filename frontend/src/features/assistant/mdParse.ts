@@ -1,6 +1,6 @@
 // A small markdown reader for the assistant's replies. It produces a tree that React renders as
 // text nodes, so nothing in a reply is ever treated as HTML. Covered: paragraphs, headings, lists,
-// fenced code, pipe tables, `code`, **bold**, *italic*, and http(s) links.
+// fenced code, pipe tables, rules (---), `code`, **bold**, *italic*, and http(s) links.
 
 export type Inline =
   | { t: "text"; v: string }
@@ -15,6 +15,7 @@ export type Block =
   | { type: "ul" | "ol"; items: Inline[][] }
   | { type: "code"; lang: string; text: string }
   | { type: "table"; head: Inline[][]; rows: Inline[][][] }
+  | { type: "hr" }
 
 const LINK = /^\[([^\]\n]+)\]\((https?:\/\/[^\s)]+)\)/
 const word = (c: string | undefined) => c !== undefined && /[\p{L}\p{N}_]/u.test(c)
@@ -93,6 +94,7 @@ const HEADING = /^\s{0,3}(#{1,6})\s+(.*?)\s*#*\s*$/
 const BULLET = /^\s*[-*+]\s+(.*)$/
 const NUMBERED = /^\s*\d+[.)]\s+(.*)$/
 const TABLE_SEP = /^\s*\|?\s*:?-{2,}:?\s*(\|\s*:?-{2,}:?\s*)*\|?\s*$/
+const RULE = /^\s{0,3}([-*_])(\s*\1){2,}\s*$/
 const isRow = (l: string) => l.trim().startsWith("|")
 
 function cells(line: string): Inline[][] {
@@ -104,6 +106,7 @@ function cells(line: string): Inline[][] {
 
 const startsBlock = (line: string, next: string | undefined) =>
   FENCE.test(line) ||
+  RULE.test(line) ||
   HEADING.test(line) ||
   BULLET.test(line) ||
   NUMBERED.test(line) ||
@@ -126,6 +129,11 @@ export function parseMarkdown(src: string): Block[] {
       while (i < lines.length && !lines[i].trim().startsWith(fence[1])) body.push(lines[i++])
       i++ // closing fence (or past the end)
       out.push({ type: "code", lang: fence[2].toLowerCase(), text: body.join("\n") })
+      continue
+    }
+    if (RULE.test(line)) {
+      out.push({ type: "hr" })
+      i++
       continue
     }
     const h = HEADING.exec(line)

@@ -1,4 +1,4 @@
-import { BookOpen, Check, CircleAlert, Copy, Database, PencilLine, RotateCw, SearchCheck } from "lucide-react"
+import { BookOpen, Check, CircleAlert, Clock, Copy, Database, PencilLine, RotateCw, SearchCheck } from "lucide-react"
 import { useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react"
 import { Button, IconButton } from "../../components/Button"
 import { DataGrid } from "../../components/DataGrid"
@@ -48,7 +48,18 @@ function useTypewriter(text: string, active: boolean, onDone: () => void): strin
   return run ? text.slice(0, shown) : text
 }
 
-export function UserTurn({ turn }: { turn: Turn }) {
+/** The thread's two shapes: the narrow sidebar column, or the full Ask AI page (question bubbles, taller tables). */
+export type ThreadLayout = "column" | "page"
+
+export function UserTurn({ turn, layout = "column" }: { turn: Turn; layout?: ThreadLayout }) {
+  if (layout === "page")
+    return (
+      <div className="as-turn flex justify-end">
+        <p className="max-w-[min(620px,88%)] whitespace-pre-wrap break-words rounded-[18px] rounded-br-[6px] border border-border bg-raised px-4 py-2.5 text-[14.5px] leading-relaxed text-text">
+          {turn.text}
+        </p>
+      </div>
+    )
   return (
     <div className="as-turn border-l-2 border-[color-mix(in_oklab,var(--accent)_70%,transparent)] pl-3 text-[14px] font-medium leading-snug text-text">
       {turn.text}
@@ -62,27 +73,37 @@ export function AssistantTurn({
   sqlAction,
   onSettle,
   onRetry,
+  layout = "column",
 }: {
   turn: Turn
   laneOf: LaneOf
   sqlAction: SqlAction | null
   onSettle: (key: string) => void
   onRetry: (() => void) | null
+  layout?: ThreadLayout
 }) {
+  const gridHeight = layout === "page" ? 380 : 220
   const text = useTypewriter(turn.text, turn.fresh, () => onSettle(turn.key))
   // SQL the reply shows and also ran appears once, with its rows (paired on the full text, so the pairing
   // doesn't shift while the typewriter is half way)
   const paired = useMemo(() => attachRuns(turn.text, turn.sqlRuns), [turn.text, turn.sqlRuns])
   // no Open/Insert while the text is still arriving
   const action = turn.fresh ? null : sqlAction
-  if (turn.error)
+  if (turn.error) {
+    // a rate limit or a slow upstream is a wait, not a failure: orange and a clock instead of red
+    const wait = turn.error.kind === "rate" || turn.error.kind === "upstream"
+    const tone = wait ? "var(--lane-3)" : "var(--danger)"
     return (
       <div
         role="alert"
-        className="as-turn rounded-card border border-[color-mix(in_oklab,var(--danger)_35%,transparent)] bg-[color-mix(in_oklab,var(--danger)_6%,transparent)] px-3.5 py-3"
+        className="as-turn rounded-card border px-3.5 py-3"
+        style={{
+          borderColor: `color-mix(in oklab, ${tone} 35%, transparent)`,
+          background: `color-mix(in oklab, ${tone} 6%, transparent)`,
+        }}
       >
-        <p className="flex items-center gap-2 text-[13.5px] font-medium text-danger">
-          <CircleAlert size={15} strokeWidth={2} />
+        <p className="flex items-center gap-2 text-[13.5px] font-medium" style={{ color: tone }}>
+          {wait ? <Clock size={15} strokeWidth={2} /> : <CircleAlert size={15} strokeWidth={2} />}
           {turn.error.title}
         </p>
         <p className="mt-1 text-[13px] leading-relaxed text-muted">{turn.error.message}</p>
@@ -93,6 +114,7 @@ export function AssistantTurn({
         )}
       </div>
     )
+  }
 
   const failed = turn.chips.filter((c) => c.tone === "fail" && c.detail)
   return (
@@ -101,7 +123,13 @@ export function AssistantTurn({
         text={text}
         laneOf={laneOf}
         renderSql={(sql, key, index) => (
-          <SqlEvidence key={key} sql={sql} run={turn.fresh ? null : (paired.byBlock[index] ?? null)} action={action} />
+          <SqlEvidence
+            key={key}
+            sql={sql}
+            run={turn.fresh ? null : (paired.byBlock[index] ?? null)}
+            action={action}
+            gridHeight={gridHeight}
+          />
         )}
       />
       {/* the evidence arrives once the text has finished */}
@@ -122,7 +150,7 @@ export function AssistantTurn({
       {!turn.fresh &&
         paired.rest.map((r, i) => (
           <div key={i} className="as-chip" style={{ "--i": turn.chips.length + i } as CSSProperties}>
-            <SqlEvidence sql={r.sql} run={r} action={action} />
+            <SqlEvidence sql={r.sql} run={r} action={action} gridHeight={gridHeight} />
           </div>
         ))}
       {/* screen readers get the finished reply once, not every word of the typewriter */}
@@ -163,7 +191,18 @@ export function ToolChip({ chip, index }: { chip: Chip; index: number }) {
 const NUMERIC = /int|numeric|decimal|real|double|float|money/i
 
 /** SQL the assistant wrote (and maybe ran), with copy, the screen's action, and the rows it got back. */
-export function SqlEvidence({ sql, run, action }: { sql: string; run: SqlRun | null; action: SqlAction | null }) {
+export function SqlEvidence({
+  sql,
+  run,
+  action,
+  gridHeight = 220,
+}: {
+  sql: string
+  run: SqlRun | null
+  action: SqlAction | null
+  /** the result table's height before it scrolls */
+  gridHeight?: number
+}) {
   const [copied, setCopied] = useState(false)
   useEffect(() => {
     if (!copied) return
@@ -180,7 +219,7 @@ export function SqlEvidence({ sql, run, action }: { sql: string; run: SqlRun | n
   }
   const shownRows = run ? run.rows.length : 0
   return (
-    <div className="overflow-hidden rounded-card border border-border bg-surface">
+    <div className="min-w-0 overflow-hidden rounded-card border border-border bg-surface">
       <div className="flex h-9 items-center gap-2 border-b border-border pl-3 pr-1">
         <Database size={13} strokeWidth={2} className="shrink-0 text-lane-1" />
         <span className="truncate text-[12px] text-muted">
@@ -218,7 +257,7 @@ export function SqlEvidence({ sql, run, action }: { sql: string; run: SqlRun | n
             numeric: c.type ? NUMERIC.test(c.type) : false,
           }))}
           rows={run.rows}
-          maxHeight={220}
+          maxHeight={gridHeight}
           className="rounded-none border-x-0 border-b-0"
         />
       )}

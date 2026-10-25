@@ -212,7 +212,7 @@ const STEPS: { title: string; body: string; lane: number; visual: ReactNode }[] 
   },
   {
     title: "Data",
-    body: "Browse and edit rows, run SELECTs and confirmed INSERT, UPDATE or DELETE statements, step through a query, read its plan, or ask in plain English with Ask AI.",
+    body: "Browse and edit rows, run SELECTs and confirmed INSERT, UPDATE or DELETE statements, step through a query and read its plan. Then ask about the rows in plain English on the Ask AI step.",
     lane: 4,
     visual: <QueryVisual />,
   },
@@ -401,7 +401,7 @@ function AssistantTeaser() {
             Rework the design by asking.
           </h2>
           <p className="ld-reveal mt-6 max-w-[46ch] text-[16px] leading-relaxed text-muted" style={d(160)}>
-            The command bar on the design canvas and Ask AI on the Data page take plain requests. Questions get
+            The command bar on the design canvas and the Ask AI step take plain requests. Questions get
             answered with the SQL that was run; edits like renames go through checked tools, show up on the diagram,
             and can be undone. Both use Google Gemini, so they need a Gemini API key; everything else works without
             one.
