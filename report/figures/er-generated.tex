@@ -1,26 +1,35 @@
-% ER diagram of the database QLens generates for the fee register (workspace schema ws_<id>),
-% from the generated DDL (design/ddl.py) of an applied proposal.
+% ER diagram (textbook notation) of the database QLens generates for the fee register.
 \begin{figure}[htbp]
 \centering
-\begin{tikzpicture}[node distance=7mm]
-  \node[entity=lane3, anchor=north west] (fr) at (0,0) {\eh{fee\_register}\nodepart{two}\begin{attrs}
-    \PK & id & bigint\\ \FK & student\_id & bigint\\ & month & text\\ & fee\_paid & bigint\\ & payment\_mode & text?\\
-    \multicolumn{3}{@{}l@{}}{\color{lane5}\itshape UQ(student\_id, month)}\end{attrs}};
-  \node[entity=lane0, anchor=north west] (st) at (4.25,0) {\eh{students}\nodepart{two}\begin{attrs}
-    \PK & id & bigint\\ \UQ & student\_name & text\\ \UQ & student\_phone & text\\ \FK & batch\_id & bigint\end{attrs}};
-  \node[entity=lane1, anchor=north west] (ba) at (8.3,0) {\eh{batches}\nodepart{two}\begin{attrs}
-    \PK & id & bigint\\ \UQ & batch & text\\ \FK & teacher\_id & bigint\end{attrs}};
-  \node[entity=lane2, anchor=north west] (te) at (11.6,0) {\eh{teachers}\nodepart{two}\begin{attrs}
-    \PK & id & bigint\\ \UQ & teacher & text\\ \UQ & teacher\_phone & text\end{attrs}};
-  \draw[rel, {ER many}-{ER one}] ([yshift=-0.85cm]fr.north east) -- ([yshift=-0.85cm]st.north west);
-  \draw[rel, {ER many}-{ER one}] ([yshift=-0.85cm]st.north east) -- ([yshift=-0.85cm]ba.north west);
-  \draw[rel, {ER many}-{ER one}] ([yshift=-0.85cm]ba.north east) -- ([yshift=-0.85cm]te.north west);
-  \foreach \n/\r in {fr/{3{,}000 rows}, st/{300 rows}, ba/{8 rows}, te/{6 rows}}
-    \node[font=\sffamily\scriptsize\color{muted}, anchor=north west] at ([yshift=-1mm]\n.south west) {\r};
-\end{tikzpicture}
+\resizebox{\linewidth}{!}{%
+\begin{tikzpicture}[
+    ent/.style={rectangle split, rectangle split parts=2, draw=#1!75!black, line width=0.7pt,
+      rectangle split part fill={#1!15,white}, align=left, inner sep=3.5pt, font=\sffamily\footnotesize,
+      text width=2.75cm},
+    rel/.style={diamond, aspect=2.0, draw=ink!70, fill=white, line width=0.6pt, inner sep=1pt,
+      font=\sffamily\scriptsize, align=center},
+    ln/.style={line width=0.6pt, draw=ink!75},
+    card/.style={font=\sffamily\footnotesize\bfseries, text=lane7!80!black, fill=white, inner sep=1pt},
+  ]
+  \node[ent=lane3] (F) at (0,0) {\centering\textbf{Fee Record}\nodepart{two}\underline{id}\\ month\\ fee\_paid\\ payment\_mode};
+  \node[ent=lane0] (S) at (4.6,0) {\centering\textbf{Student}\nodepart{two}\underline{id}\\ student\_name\\ student\_phone};
+  \node[ent=lane1] (B) at (9.2,0) {\centering\textbf{Batch}\nodepart{two}\underline{id}\\ batch};
+  \node[ent=lane2] (T) at (13.8,0) {\centering\textbf{Teacher}\nodepart{two}\underline{id}\\ teacher\\ teacher\_phone};
+  \node[rel] (r1) at (2.3,-1.6) {paid by};
+  \node[rel] (r2) at (6.9,-1.6) {enrolled\\in};
+  \node[rel] (r3) at (11.5,-1.6) {taught\\by};
+  \draw[ln] (F.south) |- (r1.west) node[card, pos=0.3, left] {N};
+  \draw[ln] (r1.east) -| (S.south) node[card, pos=0.75, right] {1};
+  \draw[ln] (S.south east) ++(-0.3,0) |- (r2.west) node[card, pos=0.3, right] {N};
+  \draw[ln] (r2.east) -| (B.south) node[card, pos=0.75, right] {1};
+  \draw[ln] (B.south east) ++(-0.3,0) |- (r3.west) node[card, pos=0.3, right] {N};
+  \draw[ln] (r3.east) -| (T.south) node[card, pos=0.75, right] {1};
+  \foreach \n/\r in {F/{3{,}000 rows}, S/{300 rows}, B/{8 rows}, T/{6 rows}}
+    \node[font=\sffamily\scriptsize\color{muted}, anchor=south] at (\n.north) {\r};
+\end{tikzpicture}}
 \caption[ER diagram of the generated fee-register database]{ER diagram of the database QLens generates
-for the fee register. Every table has a surrogate identity key; natural keys are
-\code{UNIQUE NULLS NOT DISTINCT}; foreign keys are \code{NOT NULL} and \code{ON DELETE RESTRICT};
-\code{?} marks the only nullable column. Row counts are those of the applied design.}
+for the fee register. Each fee record is paid by one student, each student is enrolled in one batch and
+each batch is taught by one teacher (all N\,:\,1). Converted to tables, each N side gets a foreign key
+(\code{student\_id}, \code{batch\_id}, \code{teacher\_id}).}
 \label{fig:er-generated}
 \end{figure}

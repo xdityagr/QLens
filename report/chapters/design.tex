@@ -5,16 +5,14 @@
 \label{sec:goals}
 
 \begin{enumerate}[label=G\arabic*.]
-  \item \textbf{Correct by construction, verified on data.} Designs are 3NF and lossless by the
-  algorithm, and every apply re-checks losslessness on the real rows before committing.
-  \item \textbf{SQL in plain sight.} No ORM: constraints, PL/pgSQL, triggers, views, dynamic SQL and
-  catalog queries are hand-written, and the generated SQL is shown to the user.
-  \item \textbf{Work where the data is.} Profiling, dependency checks and duplicate search run inside
-  PostgreSQL; only the set algebra of synthesis runs in Python.
-  \item \textbf{Isolation by privilege.} A user's query reaches only its own workspace because the
-  database role lacks the privileges, not because the application filters text.
-  \item \textbf{Non-destructive and auditable.} The raw import is never modified; every repair is a
-  logged, transactional edit of a separate staging copy.
+  \item \textbf{Correct design.} Tables must be in 3NF, lossless and dependency-preserving, and the
+  lossless join is checked again on the real rows before the tables are kept.
+  \item \textbf{SQL in plain sight.} All SQL is hand-written (no code generator hides it), and the user
+  can read the SQL that QLens runs.
+  \item \textbf{Use the database.} Counting, grouping and checking are done by SQL inside PostgreSQL.
+  \item \textbf{Safe queries.} A user's query can read only that user's workspace, because its database
+  user has no other privileges.
+  \item \textbf{Nothing is lost.} The original sheet is never changed, and every fix is logged.
 \end{enumerate}
 
 \section{System Architecture}
@@ -22,42 +20,62 @@
 
 \InputIfFileExists{figures/architecture}{}{}
 
-QLens is a three-tier web application whose bottom tier does unusually much work
-(\cref{fig:architecture}). The \emph{client} is a React 19 and TypeScript single-page application
-\cite{react} with React Flow diagrams and a CodeMirror SQL editor; it talks JSON to \code{/api/*} with the
-session in an \code{httpOnly} cookie. The \emph{application tier} is FastAPI on Python 3.13
-\cite{fastapi} with psycopg~3 \cite{psycopg} and pglast \cite{pglast}; each request runs in one transaction
-on a pooled connection as the owning role \code{qlens\_app}, committed before the response is sent. The
-\emph{data tier} is a private PostgreSQL 18 cluster \cite{postgres18docs} holding the \code{qlens}
-metadata schema and, per workspace, the schemas \code{ws\_<id>\_src} (\code{\_raw}, never edited, and
-\code{\_staging}, typed and cleaned), \code{ws\_<id>} (the generated tables) and \code{ws\_<id>\_lab}
-(\stplan), plus one login role \code{qlens\_ws\_<id>} (\cref{sec:db-logic}).
+QLens has three tiers (\cref{fig:architecture}):
+\begin{enumerate}
+  \item \textbf{Browser.} The screens are web pages written in React \cite{react}. They send requests to
+  the server and show the results.
+  \item \textbf{Application server.} A FastAPI program in Python \cite{fastapi} receives each request,
+  runs the needed SQL through the psycopg library \cite{psycopg}, and returns the answer. Each request runs
+  as one transaction.
+  \item \textbf{Database server.} PostgreSQL 18 \cite{postgres18docs} holds two kinds of schema (a
+  \emph{schema} is a named group of tables inside one database). The \code{qlens} schema holds QLens's own
+  data. Each workspace gets its own schemas: \code{ws\_<id>\_src} keeps the uploaded sheet (an untouched
+  copy \code{\_raw} and a typed, cleaned copy \code{\_staging}), and \code{ws\_<id>} receives the
+  generated tables.
+\end{enumerate}
+
+The application uses two database users. The owner user \code{qlens\_app} does QLens's own work. For
+every workspace there is also a restricted user \code{qlens\_ws\_<id>} that may only \emph{read} that
+workspace's schemas; all queries typed by people run as this user (\cref{sec:design-sandbox}).
 
 \section{Detailed Design Methodologies}
 \label{sec:detailed}
 
-The design has two halves: the \emph{database design} of QLens itself and of the databases it generates
-(\cref{sec:db-er} to \cref{sec:db-sql}), and the \emph{methods} that turn a sheet into such a database
-(\cref{sec:design-discovery} onwards).
+This section first describes the database design of QLens itself (ER model, relational schema,
+constraints, SQL), and then the method QLens uses to design a database for the user, following the fee
+register as a worked example.
 
-\subsection{Conceptual Design: ER Diagram}
+\subsection{ER Model of QLens}
 \label{sec:db-er}
-\label{sec:design-metadata}
 
-QLens records everything it knows in the \code{qlens} schema: 22 tables plus a migrations log
-(\cref{fig:er}). Users own workspaces; a workspace has at most one dataset; a dataset has columns,
-candidate keys, functional dependencies, duplicate groups and a log of fixes; designs are proposals with
-their tables, columns and unique keys; and the query side records saved queries, runs, plans and index
-experiments. Multi-column keys and dependency left-hand sides are many-to-many relationships between a
-key (or dependency) and dataset columns, resolved by junction tables.
+\Cref{fig:er} is the ER diagram of the data QLens stores. A \emph{User} owns many \emph{Workspaces}; a
+workspace holds one \emph{Dataset} (the imported sheet), which has many \emph{Columns}. For a dataset
+QLens finds \emph{Functional Dependencies} and \emph{Candidate Keys}; both are linked to columns by M\,:\,N
+relationships, because one dependency can have several columns on its left-hand side (LHS) and one
+column can appear in many dependencies. A dataset gets \emph{Schema Proposals} (designs), which contain
+\emph{Proposed Tables} and \emph{Proposed Columns}; a proposed column may refer to another proposed table
+(it becomes a foreign key). On the query side, a workspace has \emph{Saved Queries} and \emph{Query
+Runs}, and a \emph{Row Change} log of edits made in the Data screen (\stwip). Some attributes are
+\emph{derived attributes}: for example a dependency's \code{is\_exact} is derived from
+\code{violating\_rows = 0}, and PostgreSQL computes it automatically.
 
 \InputIfFileExists{figures/er}{}{}
 
-\subsection{Relational Schema}
+\subsection{ER Diagram to Relational Schema}
 \label{sec:db-schema}
 
-\Cref{fig:relschema} gives the logical schema in textbook notation. Every surrogate key is
-\code{bigint GENERATED ALWAYS AS IDENTITY}; every timestamp is \code{timestamptz NOT NULL DEFAULT now()}.
+The ER diagram was converted into tables with the standard rules \cite{silberschatz2019}:
+\begin{enumerate}
+  \item Each entity set becomes a table; its key \code{id} becomes the primary key.
+  \item A 1\,:\,N relationship becomes a foreign key on the N side (e.g.\ \code{workspaces.owner\_id}
+  refers to \code{users.id}).
+  \item A 1\,:\,1 relationship becomes a foreign key with a \code{UNIQUE} constraint (e.g.\
+  \code{datasets.workspace\_id}).
+  \item An M\,:\,N relationship becomes its own table whose primary key is the pair of foreign keys
+  (\code{fd\_lhs\_columns}, \code{candidate\_key\_columns}, \code{proposed\_unique\_key\_columns}).
+\end{enumerate}
+
+\Cref{fig:relschema} lists the resulting 26 tables in relational-schema notation.
 
 \newcommand{\rk}[1]{\underline{#1}}
 \newcommand{\rf}[1]{\textit{#1}$^{\dagger}$}
@@ -69,7 +87,7 @@ key (or dependency) and dataset columns, resolved by junction tables.
 \rel{users}{\rk{id}, email, password\_hash, display\_name, created\_at}
 \rel{sessions}{\rk{token\_hash}, \rf{user\_id}, created\_at, expires\_at}
 \rel{workspaces}{\rk{id}, \rf{owner\_id}, name, created\_at, updated\_at}
-\textsf{\textbf{Dataset and analysis}}\par\smallskip
+\textsf{\textbf{Imported sheet and analysis}}\par\smallskip
 \rel{datasets}{\rk{id}, \rf{workspace\_id}, original\_filename, source, file\_size\_bytes, row\_count, column\_count, status, created\_at, updated\_at}
 \rel{dataset\_columns}{\rk{id}, \rf{dataset\_id}, ordinal, name, label, inferred\_type, null\_count, distinct\_count, sample\_values}
 \rel{candidate\_keys}{\rk{id}, \rf{dataset\_id}, key\_size}
@@ -79,241 +97,142 @@ key (or dependency) and dataset columns, resolved by junction tables.
 \rel{duplicate\_groups}{\rk{id}, \rf{dataset\_id}, \rf{column\_id}, canonical\_value, confidence, max\_similarity, status}
 \rel{duplicate\_values}{\rk{\rf{group\_id}, value}, row\_count}
 \rel{dataset\_fixes}{\rk{id}, \rf{dataset\_id}, kind, \rf{column\_id}, from\_value, to\_value, rows\_affected, created\_at}
+\textsf{\textbf{Data screen (\stwip)}}\par\smallskip
+\rel{row\_changes}{\rk{id}, \rf{workspace\_id}, table\_name, op, row\_pk, before, after, changed\_at}
 \end{minipage}\hfill
 \begin{minipage}[t]{0.49\linewidth}\raggedright
 \textsf{\textbf{Proposed designs}}\par\smallskip
-\rel{schema\_proposals}{\rk{id}, \rf{dataset\_id}, status, created\_at, applied\_at, lossless\_ok, staging\_rows, reconstructed\_rows, mismatch\_rows}
+\rel{schema\_proposals}{\rk{id}, \rf{dataset\_id}, \rf{based\_on\_id}, status, created\_at, applied\_at, lossless\_ok, staging\_rows, reconstructed\_rows, mismatch\_rows}
 \rel{proposed\_tables}{\rk{id}, \rf{proposal\_id}, ordinal, name, kind, color\_index, explanation}
 \rel{proposed\_columns}{\rk{id}, \rf{table\_id}, ordinal, name, \rf{source\_column\_id}, data\_type, role, not\_null, \rf{references\_table\_id}}
 \rel{proposed\_unique\_keys}{\rk{id}, \rf{table\_id}, is\_primary\_natural}
 \rel{proposed\_unique\_\allowbreak key\_columns}{\rk{\rf{key\_id}, \rf{column\_id}}}
-\textsf{\textbf{Queries and performance}}\par\smallskip
+\textsf{\textbf{Queries}}\par\smallskip
 \rel{saved\_queries}{\rk{id}, \rf{workspace\_id}, title, sql\_text, run\_count, last\_run\_at, last\_duration\_ms, created\_at, updated\_at}
 \rel{query\_runs}{\rk{id}, \rf{workspace\_id}, \rf{saved\_query\_id}, sql\_text, source, target, status, duration\_ms, row\_count, error\_message, created\_at}
 \rel{nl\_questions}{\rk{id}, \rf{query\_run\_id}, question, explanation, model}
 \rel{explain\_snapshots}{\rk{id}, \rf{workspace\_id}, \rf{query\_run\_id}, target, plan, planning\_ms, execution\_ms, created\_at}
 \rel{index\_experiments}{\rk{id}, \rf{workspace\_id}, table\_name, columns, index\_name, ddl, before\_ms, after\_ms, runs, speedup, status, created\_at}
-\textsf{\textbf{Bookkeeping}}\par\smallskip
-\rel{schema\_migrations}{\rk{version}, applied\_at}
+\textsf{\textbf{Assistant}}\par\smallskip
+\rel{assistant\_conversations}{\rk{id}, \rf{workspace\_id}, context, title, created\_at, updated\_at}
+\rel{assistant\_messages}{\rk{id}, \rf{conversation\_id}, seq, role, content, intent, created\_at}
+\rel{assistant\_tool\_calls}{\rk{id}, \rf{message\_id}, seq, tool, args, ok, result, error, \rf{query\_run\_id}, created\_at}
 \end{minipage}
-\caption[Relational schema of \code{qlens}]{Relational schema of the \code{qlens} schema. Primary keys are
-underlined; foreign keys are in italics with $\dagger$ (targets in \cref{tab:keys}).}
+\caption[Relational schema of QLens]{Relational schema of the \code{qlens} schema. Primary keys are
+underlined; foreign keys are in italics and marked $\dagger$.}
 \label{fig:relschema}
 \end{figure}
 
-\subsection{Keys and Relationships}
+\subsection{Keys and Integrity Constraints}
 \label{sec:db-keys}
 
-Besides the primary keys, the alternate keys are \code{users(email)}, \code{workspaces(owner\_id, name)},
-\code{datasets(workspace\_id)}, \code{dataset\_columns(dataset\_id, name)} and \code{(dataset\_id, ordinal)},
-\code{duplicate\_groups(dataset\_id, column\_id, canonical\_value)}, \code{proposed\_tables(proposal\_id,
-name)}, \code{proposed\_columns(table\_id, name)}, \code{saved\_queries(workspace\_id, title)} and
-\code{nl\_questions(query\_run\_id)}. The 31 foreign keys form the relationships of \cref{tab:keys}.
-Deleting a parent removes its children, so deleting a user leaves no orphans; \code{SET NULL} is used
-only where history must survive.
+\paragraph{Keys.} Every table has a primary key; most use a surrogate key \code{id} that PostgreSQL
+numbers automatically (\code{GENERATED ALWAYS AS IDENTITY}). Natural candidate keys are kept as
+\code{UNIQUE} constraints, for example \code{users(email)}, \code{workspaces(owner\_id, name)} and
+\code{saved\_queries(workspace\_id, title)}. \Cref{tab:keys} lists the main foreign keys.
 
 \begin{table}[htbp]
 \centering
-\caption[Keys and relationships]{Relationships of the \code{qlens} schema (parent 1 : $N$ child unless stated).}
+\caption[Foreign keys]{Main relationships and their foreign keys.}
 \label{tab:keys}
 \footnotesize
-\begin{tabularx}{\textwidth}{@{}>{\raggedright\arraybackslash}p{0.3\textwidth} X l l@{}}
+\begin{tabularx}{\textwidth}{@{}l X l l@{}}
 \toprule
-\textbf{Parent} & \textbf{Child (foreign key)} & \textbf{Cardinality} & \textbf{ON DELETE} \\
+\textbf{Parent table} & \textbf{Child table (foreign key)} & \textbf{Type} & \textbf{On delete} \\
 \midrule
-users & sessions (user\_id), workspaces (owner\_id) & 1 : $N$ & CASCADE \\
-workspaces & datasets (workspace\_id, unique) & 1 : 0..1 & CASCADE \\
-workspaces & saved\_queries, query\_runs, explain\_snapshots, index\_experiments (workspace\_id) & 1 : $N$ & CASCADE \\
-datasets & dataset\_columns, candidate\_keys, functional\_dependencies, duplicate\_groups, dataset\_fixes, schema\_proposals (dataset\_id) & 1 : $N$ & CASCADE \\
-dataset\_columns & functional\_dependencies (rhs\_column\_id), duplicate\_groups, dataset\_fixes (column\_id) & 1 : $N$ & CASCADE \\
-candidate\_keys $\times$ dataset\_columns & candidate\_key\_columns (key\_id, column\_id) & $M$ : $N$ & CASCADE \\
-functional\_dependencies $\times$ dataset\_columns & fd\_lhs\_columns (fd\_id, column\_id) & $M$ : $N$ & CASCADE \\
-duplicate\_groups & duplicate\_values (group\_id) & 1 : $N$ & CASCADE \\
-schema\_proposals & proposed\_tables (proposal\_id) & 1 : $N$ & CASCADE \\
-proposed\_tables & proposed\_columns (table\_id), proposed\_unique\_keys (table\_id) & 1 : $N$ & CASCADE \\
-proposed\_tables & proposed\_columns (references\_table\_id, nullable) & 0..1 : $N$ & CASCADE \\
-dataset\_columns & proposed\_columns (source\_column\_id, nullable) & 0..1 : $N$ & SET NULL \\
-proposed\_unique\_keys $\times$\newline\quad proposed\_columns & proposed\_unique\_\allowbreak key\_columns (key\_id, column\_id) & $M$ : $N$ & CASCADE \\
-saved\_queries & query\_runs (saved\_query\_id, nullable) & 0..1 : $N$ & SET NULL \\
-query\_runs & nl\_questions (query\_run\_id, unique) & 1 : 0..1 & CASCADE \\
-query\_runs & explain\_snapshots (query\_run\_id, nullable) & 0..1 : $N$ & CASCADE \\
+users & workspaces (owner\_id), sessions (user\_id) & 1\,:\,N & cascade \\
+workspaces & datasets (workspace\_id, unique) & 1\,:\,1 & cascade \\
+workspaces & saved\_queries, query\_runs (workspace\_id) & 1\,:\,N & cascade \\
+datasets & dataset\_columns, functional\_dependencies, candidate\_keys, schema\_proposals (dataset\_id) & 1\,:\,N & cascade \\
+functional\_dependencies, dataset\_columns & fd\_lhs\_columns (fd\_id, column\_id) & M\,:\,N & cascade \\
+candidate\_keys, dataset\_columns & candidate\_key\_columns (key\_id, column\_id) & M\,:\,N & cascade \\
+schema\_proposals & proposed\_tables (proposal\_id) & 1\,:\,N & cascade \\
+proposed\_tables & proposed\_columns (table\_id) & 1\,:\,N & cascade \\
+saved\_queries & query\_runs (saved\_query\_id, may be NULL) & 1\,:\,N & set null \\
 \bottomrule
 \end{tabularx}
 \end{table}
 
-\subsection{Normalization of the Schema}
+\paragraph{Integrity constraints.} The database itself rejects wrong data:
+\begin{itemize}
+  \item \textbf{NOT NULL} on every column that must always have a value.
+  \item \textbf{CHECK} constraints for business rules, for example
+  \code{CHECK (status <> 'applied' OR lossless\_ok IS TRUE)}: a design can be marked \emph{applied}
+  only if its lossless-join check passed; and \code{CHECK (status IN ('draft', 'applied',
+  'superseded'))} for allowed values.
+  \item \textbf{UNIQUE} constraints that allow only one draft and one applied design per dataset.
+  \item \textbf{Referential integrity}: \code{ON DELETE CASCADE} deletes the children with their parent,
+  so deleting a user leaves no orphan rows; \code{SET NULL} keeps the run history when a saved query is
+  deleted.
+\end{itemize}
+
+\subsection{Normalization of the QLens Schema}
 \label{sec:db-normal}
 
-Each table describes one kind of thing and every non-key attribute depends on the whole key and nothing
-else, so the schema is in BCNF apart from the deliberate cases below; in particular there are no
-transitive dependencies through non-key attributes. Lists are never stored in a column when they are
-facts in their own right: the columns of a candidate key, the left-hand side of a dependency and the
-columns of a unique key each live in a junction table, so ``which dependencies use column $c$?'' is an
-indexed join, not a string search. (\code{sample\_values} and \code{index\_experiments.columns} are
-arrays because they are display values, never queried by element.) Three denormalizations are
-deliberate. \code{dataset\_id} is stored next to \code{column\_id} in \tbl{duplicate\_groups},
-\tbl{dataset\_fixes} and \tbl{functional\_dependencies} although it follows from the column, so that the
-Analyze page filters by dataset without a join; \code{workspace\_id} in \tbl{explain\_snapshots} likewise saves a join through \tbl{query\_runs}
-(and lets a plan without a run belong to a workspace). Derived values such as
-\code{is\_exact}, \code{violation\_ratio} and \code{speedup} are \code{GENERATED ALWAYS AS (\dots) STORED},
-so the redundancy can never become an anomaly: the database recomputes them on every write.
-\code{run\_count} and \code{last\_run\_at} of a saved query are maintained by a trigger for the same reason.
+In each table every non-key attribute depends on the key, the whole key, and nothing but the key, so
+the tables are in 3NF (and in BCNF, because every determinant is a key). Two points show this:
+\begin{enumerate}
+  \item \textbf{No repeating groups.} The columns of a dependency's left-hand side are not stored as a
+  list in one cell; they are rows of the table \code{fd\_lhs\_columns}. The same holds for the columns of
+  a candidate key.
+  \item \textbf{Deliberate, controlled redundancy.} \code{dataset\_id} is stored in
+  \code{functional\_dependencies} even though it can be found through the column; this saves a join on
+  the Analyze screen. Derived attributes such as \code{is\_exact} are computed by the database, and a
+  saved query's \code{run\_count} is maintained by a trigger, so these copies can never disagree.
+\end{enumerate}
 
-\subsection{Constraints and Indexes}
-\label{sec:db-constraints}
+\subsection{SQL Used in QLens}
+\label{sec:db-sql}
 
-Every column is \code{NOT NULL} unless absence has a meaning (a run without a saved query, an unchecked
-design). Closed vocabularies are \code{text} with \code{CHECK (x IN (\dots))}, and every stored name that
-will become an SQL identifier is checked against \verb|^[a-z_][a-z0-9_]{0,62}$|. \Cref{tab:integrity}
-lists the rules that carry business logic; \cref{tab:indexes} the secondary indexes, each justified by
-the query it serves (PostgreSQL does not index foreign keys by itself).
+\Cref{tab:sqlmap} maps the SQL topics of the course to the places where QLens uses them.
 
 \begin{table}[htbp]
 \centering
-\caption[Integrity rules]{Integrity rules that carry business logic.}
-\label{tab:integrity}
+\caption[SQL topics used in QLens]{SQL topics of the syllabus and where QLens uses them.}
+\label{tab:sqlmap}
 \footnotesize
-\begin{tabularx}{\textwidth}{@{}>{\raggedright\arraybackslash}p{0.55\textwidth} X@{}}
+\begin{tabularx}{\textwidth}{@{}l X@{}}
 \toprule
-\textbf{Rule} & \textbf{Meaning} \\
+\textbf{Topic} & \textbf{Use in QLens} \\
 \midrule
-\code{CHECK (status <> 'applied' OR lossless\_ok IS TRUE)} & no design is recorded as applied without a passed check; \code{IS TRUE} makes NULL fail \\
-\code{UNIQUE (dataset\_id) WHERE status = 'draft'} and \code{WHERE status = 'applied'} & at most one draft and one applied design per dataset (partial unique indexes) \\
-\code{CHECK ((role = 'fk') = (references\_table\_id IS NOT NULL))} & a column is a foreign key exactly when it references a table \\
-\code{CHECK ((status = 'ok') = (error\_message IS NULL))} & a run has an error message exactly when it failed \\
-\code{CHECK (email = lower(email) AND position('@' in email) > 1)} & makes \code{UNIQUE(email)} case-insensitive \\
-\code{CHECK (octet\_length(token\_hash) = 32)}, \code{CHECK (expires\_at > created\_at)} & sessions store only a SHA-256 digest and cannot expire before they start \\
-\code{CHECK (violating\_rows <= row\_count)}, \code{CHECK (key\_size BETWEEN 1 AND 3)} & analysis measures stay consistent with the search limits \\
+DDL & \code{CREATE TABLE} with keys and constraints for the \code{qlens} schema and for every generated design; \code{CREATE SCHEMA}, \code{DROP SCHEMA} per workspace \\
+DML & \code{COPY}/\code{INSERT} to import; \code{UPDATE} to fix data; \code{INSERT \dots{} SELECT DISTINCT} to fill the new tables \\
+DCL & \code{CREATE ROLE}, \code{GRANT USAGE}, \code{GRANT SELECT}, \code{ALTER DEFAULT PRIVILEGES} for each workspace user \\
+Joins & rebuilding the original sheet from the new tables; reading each dependency together with its columns \\
+Subqueries & the lossless-join check (\cref{lst:lossless}); counting distinct values \\
+Views & \code{v\_workspace\_summary} (dashboard), \code{v\_slow\_queries} (history page) \\
+Aggregation & \code{count}, \code{count(DISTINCT \dots)}, \code{sum}, \code{max} with \code{GROUP BY} to find dependencies and keys \\
+Triggers & keep \code{updated\_at} current; update saved-query statistics (\cref{lst:trigger}); log row changes (\stwip) \\
+Cursors & the query screen fetches results through \code{DECLARE \dots{} CURSOR} and \code{FETCH} (\cref{lst:cursor}) \\
+Stored procedures & PL/pgSQL functions \code{check\_fd}, \code{is\_unique} and \code{try\_date} \\
+Indexing & B-tree indexes on foreign keys and on \code{(workspace\_id, created\_at)} for the history page \\
+Transactions & import, every fix and apply are single transactions with \code{ROLLBACK} on failure \\
 \bottomrule
 \end{tabularx}
 \end{table}
 
-\begin{table}[htbp]
-\centering
-\caption[Secondary indexes]{Secondary indexes of the \code{qlens} schema and the queries they serve.}
-\label{tab:indexes}
-\footnotesize
-\begin{tabularx}{\textwidth}{@{}>{\raggedright\arraybackslash}p{0.5\textwidth} X@{}}
-\toprule
-\textbf{Index} & \textbf{Serves} \\
-\midrule
-\code{query\_runs (workspace\_id, created\_at DESC)} & history page, \code{v\_workspace\_summary}, \code{v\_slow\_queries} \\
-\code{query\_runs (saved\_query\_id, created\_at)} \code{WHERE saved\_query\_id IS NOT NULL} & \code{v\_saved\_query\_trend}; partial, as most runs are ad hoc \\
-\code{dataset\_fixes (dataset\_id, created\_at DESC)} & edit history of a dataset, newest first \\
-\code{candidate\_keys (dataset\_id, key\_size)} & keys of a dataset, smallest first \\
-\code{functional\_dependencies (dataset\_id)}, \code{(rhs\_column\_id)} & dependencies of a dataset; of a column \\
-\code{explain\_snapshots}, \code{index\_experiments (workspace\_id, created\_at DESC)} & latest plans and experiments of a workspace \\
-\code{proposed\_columns (references\_table\_id)} \code{WHERE \dots{} IS NOT NULL} & relationship lines of the design diagram \\
-\code{sessions (user\_id)}; \code{*\_columns (column\_id)} & cascades from \code{users} and \code{dataset\_columns} \\
-\bottomrule
-\end{tabularx}
-\end{table}
+\paragraph{Trigger.} After a successful run of a saved query is inserted into \code{query\_runs}, this
+trigger updates the saved query's counters:
 
-\subsection{Triggers, Views, Functions and Roles}
-\label{sec:db-logic}
-
-\paragraph{Triggers.} \code{touch\_updated\_at} is a \code{BEFORE UPDATE} row trigger on workspaces,
-datasets and saved queries; it uses \code{clock\_timestamp()} because \code{now()} is frozen for the whole
-transaction. \code{record\_query\_run} (\cref{lst:trigger}) keeps a saved query's counters in step with its
-successful runs; the \code{WHEN} clause filters before the function is even called.
-
-\begin{lstlisting}[caption={[Run-recording trigger]AFTER INSERT trigger on \code{query\_runs} (\code{002\_logic.sql})},label={lst:trigger}]
+\begin{lstlisting}[float=tbp,caption={[Trigger]Trigger that updates a saved query after each successful run},label={lst:trigger}]
 CREATE FUNCTION qlens.record_query_run() RETURNS trigger LANGUAGE plpgsql AS $$
 BEGIN
     UPDATE qlens.saved_queries
        SET run_count = run_count + 1, last_run_at = NEW.created_at,
            last_duration_ms = NEW.duration_ms
      WHERE id = NEW.saved_query_id;
-    RETURN NULL;   -- AFTER trigger: return value is ignored
+    RETURN NULL;
 END $$;
 CREATE TRIGGER query_runs_record AFTER INSERT ON qlens.query_runs
     FOR EACH ROW WHEN (NEW.saved_query_id IS NOT NULL AND NEW.status = 'ok')
     EXECUTE FUNCTION qlens.record_query_run();
 \end{lstlisting}
 
-\paragraph{Views.} \code{v\_workspace\_summary} gives the dashboard one row per workspace using two
-\code{LEFT JOIN LATERAL} aggregates (an aggregate without \code{GROUP BY} always returns a row, so empty
-workspaces are kept) and \code{GREATEST} over three timestamps. \code{v\_slow\_queries} keeps the runs at or
-above their workspace's 90th percentile, computed with \code{percentile\_cont(0.9) WITHIN GROUP (ORDER BY
-duration\_ms)}. \code{v\_saved\_query\_trend} numbers each saved query's runs and adds the previous duration
-and a five-run moving average with the window functions \code{row\_number()}, \code{lag()} and
-\code{avg() OVER (\dots{} ROWS BETWEEN 4 PRECEDING AND CURRENT ROW)}.
+\paragraph{Stored function.} \code{check\_fd} tests whether a functional dependency $X \rightarrow A$
+holds in a table. It groups the rows by $X$ and $A$, and counts how many rows would have to change for
+every $X$ value to have only one $A$ value. Zero means the dependency holds exactly.
 
-\paragraph{PL/pgSQL functions.} \code{try\_date(text)} parses ISO and day-first dates and returns NULL
-instead of raising, so type inference can test every value; \code{check\_fd} (\cref{lst:checkfd}) and
-\code{is\_unique} measure dependencies and keys with dynamic SQL in which identifiers pass only through
-\code{format('\%I')}.
-
-\paragraph{Roles and privileges.} Creating a workspace runs, in the same transaction,
-\code{CREATE ROLE qlens\_ws\_<id> LOGIN PASSWORD \dots{} NOINHERIT CONNECTION LIMIT 3}, then
-\code{ALTER ROLE \dots{} SET} \code{default\_transaction\_read\_only = on}, \code{statement\_timeout = '5s'},
-\code{idle\_in\_transaction\_session\_timeout = '10s'} and the \code{search\_path}, and for each of its schemas
-\code{GRANT USAGE ON SCHEMA}, \code{GRANT SELECT ON ALL TABLES IN SCHEMA} and \code{ALTER DEFAULT PRIVILEGES
-\dots{} GRANT SELECT ON TABLES}. The role gets nothing on \code{qlens} or on any other workspace. Its
-password is an HMAC of the workspace id under the server secret, so it is never stored, and deleting the
-workspace runs \code{DROP OWNED BY} and \code{DROP ROLE}.
-
-\subsection{SQL Used by the Application}
-\label{sec:db-sql}
-
-Every feature is a piece of hand-written SQL (\cref{tab:sqlmap}); the application code mostly composes
-identifiers safely (\code{psycopg.sql.Identifier}) and binds values.
-
-\begin{table}[htbp]
-\centering
-\caption[SQL used by each feature]{SQL used by each feature of QLens.}
-\label{tab:sqlmap}
-\footnotesize
-\begin{tabularx}{\textwidth}{@{}l X@{}}
-\toprule
-\textbf{Feature} & \textbf{SQL it runs} \\
-\midrule
-Import & \code{COPY \_raw FROM STDIN}; type tests \code{bool\_and(col \textasciitilde{} regex)}; \code{CREATE TABLE \_staging AS SELECT} with casts \\
-Profiling & one pass of \code{count(col)}, \code{count(DISTINCT col)}; top values with \code{GROUP BY \dots{} ORDER BY count(*) DESC LIMIT 5} \\
-Dependencies, keys & \code{qlens.check\_fd} (two-level \code{GROUP BY}, \code{FILTER}); \code{qlens.is\_unique} (\code{count(*)} vs.\ \code{SELECT DISTINCT}) \\
-Near-duplicates & temp table with GIN \code{gin\_trgm\_ops} index; self-join on \code{\%}; \code{similarity()}; window \code{count(*) OVER (PARTITION BY norm)} \\
-Inconsistencies, fixes & window \code{count(*) OVER (PARTITION BY lhs)}; \code{UPDATE \dots{} FROM} a \code{FOR UPDATE} CTE where \code{IS DISTINCT FROM}; audit \code{INSERT} \\
-Design & generated \code{CREATE TABLE}, \code{INSERT \dots{} SELECT DISTINCT}, natural-key \code{LEFT JOIN} lookups, \code{CREATE VIEW}; \code{quote\_ident} for display \\
-Apply & one transaction, \code{SELECT \dots{} FOR UPDATE}, \code{EXCEPT ALL} both ways, \code{ANALYZE}; schema read back from \code{pg\_class}, \code{pg\_attribute}, \code{pg\_constraint}, \code{pg\_index} \\
-Query runner & new login as the workspace role, \code{BEGIN READ ONLY}, \code{set\_config('statement\_timeout', \dots, true)}, \code{DECLARE \dots{} CURSOR FOR}, \code{FETCH FORWARD 1001}, \code{ROLLBACK} \\
-History, dashboard & \code{INSERT INTO query\_runs} (trigger), \code{v\_saved\_query\_trend}, \code{v\_slow\_queries}, \code{v\_workspace\_summary} \\
-Accounts & \code{INSERT \dots{} ON CONFLICT DO NOTHING RETURNING id}; session lookup by token digest with \code{expires\_at > now()} \\
-\bottomrule
-\end{tabularx}
-\end{table}
-
-\Cref{lst:trgm} is the core of the near-duplicate search (\code{cleanup.py}). The \code{MATERIALIZED} CTE
-forces the index-backed \code{\%} join to run first; the outer filters then drop pairs whose digits differ
-and pairs of equally frequent values.
-
-\begin{lstlisting}[caption={[Trigram near-duplicate search]Near-duplicate search with \code{pg\_trgm} over a GIN index (from \code{cleanup.py})},label={lst:trgm}]
-CREATE INDEX ON pg_temp._qlens_vals USING gin (val gin_trgm_ops);
-SELECT set_config('pg_trgm.similarity_threshold', '0.5', true);
-WITH m AS MATERIALIZED (SELECT a.val AS a, a.n AS an, b.val AS b, b.n AS bn
-                        FROM pg_temp._qlens_vals a JOIN pg_temp._qlens_vals b
-                        ON a.val % b.val AND a.val < b.val)
-SELECT a, an, b, bn, similarity(a, b) AS sim FROM m
-WHERE regexp_replace(a, '[^0-9]', '', 'g') = regexp_replace(b, '[^0-9]', '', 'g')
-  AND least(an, bn) <= greatest(an, bn) * 0.333;
-\end{lstlisting}
-
-\subsection{Dependency Discovery and Cleaning}
-\label{sec:design-discovery}
-\label{sec:design-cleanup}
-
-\InputIfFileExists{figures/pipeline}{}{}
-
-\Cref{fig:pipeline} shows the pipeline from upload to apply. \code{qlens.check\_fd} (\cref{lst:checkfd})
-returns, for $X \rightarrow A$, the rows that would have to change for the dependency to hold: per
-$X$-group, every row except those with the most frequent $A$, the $g_3$ measure of approximate
-dependencies \cite{kivinen1995}. A dependency is exact at 0, approximate up to 2\% of rows, and needs at
-least two repeated $X$-groups. Keys are tested with \code{is\_unique} on 1--3 columns after pruning by the
-profile (no NULLs; the product of distinct counts must reach the row count). Measures are never
-determinants, a pair is dropped when one of its columns already determines the target, an approximate
-dependency explained through an exact one is reported once at its root, and implied dependencies are
-flagged \emph{derived}. On the fee register six core dependencies remain, two approximate (8 and 5 rows).
-
-\begin{lstlisting}[caption={[Dependency check]\code{qlens.check\_fd}: measuring a dependency with dynamic SQL (\code{004\_analysis.sql})},label={lst:checkfd}]
+\begin{lstlisting}[float=tbp,caption={[Stored function check\_fd]Stored function that measures a functional dependency},label={lst:checkfd}]
 CREATE FUNCTION qlens.check_fd(p_schema text, p_table text, p_lhs text[], p_rhs text)
 RETURNS TABLE (row_count bigint, lhs_values bigint, repeated_groups bigint, violating_rows bigint)
 LANGUAGE plpgsql STABLE AS $$
@@ -332,132 +251,193 @@ END;
 $$;
 \end{lstlisting}
 
-Cleaning edits only \code{\_staging}. Spellings equal after lower-casing and collapsing spaces are certain
-duplicates; probable typos come from \cref{lst:trgm} \cite{angell1983}, clustered with union--find. Each
-approximate dependency lists its conflicting groups with the most frequent value as the suggestion (the
-minimal repair under $g_3$). Every merge or fix is one transactional \code{UPDATE}, logged in
-\tbl{dataset\_fixes} and followed by re-profiling; ``accept all'' does all of them and re-analyzes.
+\paragraph{Transactions and ACID.} A \emph{transaction} is a group of statements that runs completely or
+not at all. QLens relies on this:
+\begin{enumerate}
+  \item \textbf{Atomicity.} Applying a design creates all tables, fills them and checks them in one
+  transaction. If the check fails, \code{ROLLBACK} removes everything and the old tables stay.
+  \item \textbf{Consistency.} Constraints (keys, \code{CHECK}, foreign keys) are checked inside the
+  transaction, so a design that breaks them is never committed.
+  \item \textbf{Isolation.} Two people applying the same design cannot interfere: the design row is
+  locked with \code{SELECT \dots{} FOR UPDATE}.
+  \item \textbf{Durability.} After \code{COMMIT} the new tables are permanent.
+\end{enumerate}
 
-\subsection{3NF Synthesis}
+\paragraph{Indexing.} PostgreSQL's default index is a B-tree. Besides the indexes it creates for primary
+keys and \code{UNIQUE} constraints, QLens adds B-tree indexes on foreign-key columns (for joins and
+cascading deletes) and an index on \code{query\_runs (workspace\_id, created\_at DESC)}, which lets the
+History page read the latest runs of a workspace without scanning the whole table.
+
+\subsection{Normalization Method (Worked Example)}
 \label{sec:design-3nf}
 
-The design is built from exactly the dependencies the user sees: exact, accepted and not derived.
-Closure, minimal cover and synthesis (\cref{alg:bernstein}) are set algebra in Python: $X \rightarrow A$
-follows from $F$ iff $A \in X^{+}$ \cite{armstrong1974}; groups with equivalent determinants are merged and
-Bernstein's step 5 prunes what the equivalences make redundant \cite{bernstein1976}. Synthesis alone is
-lossless only if some relation contains a key of the whole table \cite{biskup1979}, so QLens designates as
-\emph{fact} the relation that contains every undetermined attribute and determines everything, or adds
-one built from a key of the dependencies. Joining outward from the fact, each join is on a key of the
-relation joined, so rows are neither added nor lost; 900 randomized cases are checked against a chase-based
-lossless test \cite{aho1979} and a brute-force 3NF test.
+This is how QLens designs a database for the user, shown on the fee register.
 
-\InputIfFileExists{figures/bernstein}{}{}
+\InputIfFileExists{figures/pipeline}{}{}
+
+\paragraph{Step 1: find the functional dependencies.} A \emph{functional dependency} $X \rightarrow A$
+means that rows with the same $X$ value always have the same $A$ value. QLens tests every candidate pair
+with \code{check\_fd} (\cref{lst:checkfd}) and every small column set with \code{is\_unique} (a candidate
+key is a minimal set of columns whose values are different in every row). For the fee register it finds
+the dependencies of \cref{fig:fee-example} and the candidate key (\code{student\_name}, \code{month}).
+Two dependencies hold on all but a few rows; they point to data errors.
+
 \InputIfFileExists{figures/fee-example}{}{}
 
-\subsection{Generated Database and Apply}
-\label{sec:design-apply}
+\paragraph{Step 2: clean the data.} The 8 rows with name variants (``riya sharma'') and the 5 rows with
+Mr.\ Gupta's old phone number are shown to the user with a suggested fix (the most common value). Similar
+spellings are found with PostgreSQL's \code{similarity()} function. Each fix is an \code{UPDATE} on the
+typed copy, run in a transaction and logged. Afterwards both dependencies hold exactly.
 
-\stdone{} Each synthesized relation becomes a table with \code{id bigint GENERATED ALWAYS AS IDENTITY
-PRIMARY KEY}. Its determinant and equivalent determinants become \code{UNIQUE NULLS NOT DISTINCT}
-constraints, so an empty \emph{Teacher} cell is one teacher stored once. A relation that contains another
-entity's natural key stores a foreign key \code{<entity>\_id ... ON DELETE RESTRICT} instead, \code{NOT
-NULL} when the replaced columns had no empty cells. Tables are named from their determinant, explained in
-plain English and renamable while the design is a draft (409 \code{proposal\_not\_draft} afterwards).
-\Cref{fig:er-generated} is the result for the fee register.
+\paragraph{Step 3: canonical cover.} The \emph{closure} $X^{+}$ of a set of columns is every column that
+$X$ determines through the dependencies. Using closures, QLens removes extra columns from left-hand sides
+and drops dependencies that follow from the others. This gives the \emph{canonical cover} $F_c$:
+\begin{quote}\small
+student\_name $\rightarrow$ student\_phone, batch \qquad student\_phone $\rightarrow$ student\_name\\
+batch $\rightarrow$ teacher \qquad teacher $\rightarrow$ teacher\_phone \qquad teacher\_phone $\rightarrow$ teacher\\
+student\_name, month $\rightarrow$ fee\_paid, payment\_mode \quad (from the candidate key)
+\end{quote}
+For example, student\_name $\rightarrow$ teacher is dropped, because it follows from student\_name
+$\rightarrow$ batch and batch $\rightarrow$ teacher.
 
-\InputIfFileExists{figures/er-generated}{}{}
+\paragraph{Step 4: 3NF decomposition.} \Cref{alg:synthesis} makes one table for each dependency of $F_c$
+and removes tables contained in others:
+\begin{itemize}
+  \item $R_1$(student\_name, student\_phone, batch) \quad (student\_phone $\rightarrow$ student\_name fits inside $R_1$)
+  \item $R_2$(batch, teacher)
+  \item $R_3$(teacher, teacher\_phone) \quad (teacher\_phone $\rightarrow$ teacher fits inside $R_3$)
+  \item $R_4$(student\_name, month, fee\_paid, payment\_mode) \quad (contains the candidate key)
+\end{itemize}
+QLens then names the tables (students, batches, teachers, fee\_register), gives each an \code{id} primary
+key, keeps the natural key as \code{UNIQUE}, and replaces a column that points to another table with a
+foreign key (batch $\rightarrow$ \code{batch\_id}, student\_name $\rightarrow$ \code{student\_id}).
 
-The script is generated in foreign-key order: entity loads are \code{INSERT \dots{} SELECT DISTINCT} from
-\code{\_staging}; foreign keys are looked up by natural key with \code{=} where the key has no NULLs (so a
-hash join is possible) and \code{IS NOT DISTINCT FROM} otherwise; the fact keeps every row; and the view
-\code{original\_sheet} joins everything back. Apply runs it in one transaction: lock the draft
-(\code{FOR UPDATE}), drop and recreate the workspace schema, execute, and run \cref{lst:lossless}. A
-non-zero count raises 409 \code{lossless\_check\_failed} with up to five differing rows and PostgreSQL rolls
-everything back. Otherwise the old applied design becomes \emph{superseded} before the new one becomes
-\emph{applied} (the partial unique indexes allow only one), and the new tables are \code{ANALYZE}d.
+\InputIfFileExists{figures/bernstein}{}{}
 
-\begin{lstlisting}[caption={[Lossless check]Lossless check generated for the fee register (\code{cols} abbreviates the eight sheet columns)},label={lst:lossless}]
-SELECT (SELECT count(*) FROM ws_20_src._staging)  AS staging_rows,
-       (SELECT count(*) FROM ws_20.original_sheet) AS reconstructed_rows,
-       (SELECT count(*) FROM (SELECT cols FROM ws_20.original_sheet
+\paragraph{Step 5: dependency preservation.} Every dependency of $F_c$ lies inside one table, so each can
+be checked on that table alone; for example the \code{UNIQUE(teacher)} constraint of \code{teachers}
+enforces teacher $\rightarrow$ teacher\_phone. The decomposition is therefore dependency-preserving.
+
+\paragraph{Step 6: lossless join.} A decomposition is \emph{lossless} if joining the tables gives back
+exactly the original relation $r$. In relational algebra the condition is
+\[ r = \Pi_{R_1}(r) \bowtie \Pi_{R_2}(r) \bowtie \Pi_{R_3}(r) \bowtie \Pi_{R_4}(r). \]
+In theory this holds because $R_4$ contains a candidate key and each join is on a key of one side. QLens
+also checks it on the real rows: a view \code{original\_sheet} joins the new tables back, and two set
+differences must both be empty. \code{EXCEPT ALL} is SQL's set difference that also counts duplicate rows.
+
+\begin{lstlisting}[float=tbp,caption={[Lossless-join check]Lossless-join check for the fee register (\code{cols} stands for the eight sheet columns)},label={lst:lossless}]
+SELECT (SELECT count(*) FROM (SELECT cols FROM ws_20.original_sheet
                               EXCEPT ALL SELECT cols FROM ws_20_src._staging) d) AS extra_rows,
        (SELECT count(*) FROM (SELECT cols FROM ws_20_src._staging
                               EXCEPT ALL SELECT cols FROM ws_20.original_sheet) d) AS missing_rows;
 \end{lstlisting}
 
-\code{EXCEPT ALL} compares multisets, so a lost or duplicated copy of a repeated row is counted, and both
-directions are needed because $A$ \code{EXCEPT ALL} $B$ is empty whenever $A \subseteq B$. On the cleaned
-fee register all 3{,}000 rows come back exactly; tests also cover forced failures, reserved-word headers,
-empty determinants, the other samples and random sheets (a 400-seed run passed throughout).
+If either count is not zero, the transaction is rolled back. On the fee register both are zero and all
+3{,}000 rows come back.
 
-\paragraph{Example queries.} \Cref{lst:examples} shows queries a user runs on the generated database in
-the Query screen; on the applied fee register they return 19 students unpaid for October, 6 batches with
-more than 25 unpaid months (JEE Evening, Mr.\ Gupta, first with Rs.~12{,}75{,}800 collected) and one
-ranked row for each of the 300 students.
+\subsection{The Generated Database}
+\label{sec:design-apply}
 
-\begin{lstlisting}[caption={[Example queries]Example queries on the generated fee-register database (runnable in the Query screen)},label={lst:examples}]
--- 1. Who has not paid for October? (joins)
+\Cref{fig:er-generated} is the ER diagram of the database QLens builds for the fee register, and
+\cref{lst:ddl} is part of the DDL it generates.
+
+\InputIfFileExists{figures/er-generated}{}{}
+
+\begin{lstlisting}[float=tbp,caption={[Generated DDL]Part of the DDL generated for the fee register},label={lst:ddl}]
+CREATE TABLE ws_20.teachers (
+    id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    teacher text NOT NULL,
+    teacher_phone text NOT NULL,
+    CONSTRAINT teachers_teacher_key UNIQUE NULLS NOT DISTINCT (teacher),
+    CONSTRAINT teachers_teacher_phone_key UNIQUE NULLS NOT DISTINCT (teacher_phone)
+);
+CREATE TABLE ws_20.fee_register (
+    id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    student_id bigint NOT NULL,
+    month text NOT NULL,
+    fee_paid bigint NOT NULL,
+    payment_mode text,
+    CONSTRAINT fee_register_student_id_month_key UNIQUE NULLS NOT DISTINCT (student_id, month),
+    CONSTRAINT fee_register_student_id_fkey FOREIGN KEY (student_id)
+        REFERENCES ws_20.students (id) ON DELETE RESTRICT
+);
+INSERT INTO ws_20.teachers (teacher, teacher_phone)
+SELECT DISTINCT s.teacher, s.teacher_phone FROM ws_20_src._staging s ORDER BY 1, 2;
+\end{lstlisting}
+
+\code{UNIQUE NULLS NOT DISTINCT} treats an empty value as one value, so a missing teacher is stored once.
+\code{ON DELETE RESTRICT} stops a student from being deleted while fee records still refer to them.
+
+\paragraph{Example queries.} \Cref{lst:examples} shows queries a user can run on the new tables in the
+Query screen. On the sample they return 19 students who did not pay for October, 6 batches with more
+than 25 unpaid months (the first is JEE Evening of Mr.\ Gupta, with Rs.~12{,}75{,}800 collected) and 124
+students who never missed a payment.
+
+\begin{lstlisting}[float=tbp,caption={[Example queries]Example queries on the generated database (join, aggregation, subquery)},label={lst:examples}]
+-- 1. Join: who has not paid for October?
 SELECT s.student_name, s.student_phone, b.batch
 FROM fee_register f JOIN students s ON s.id = f.student_id
                     JOIN batches  b ON b.id = s.batch_id
-WHERE f.month = 'Oct' AND f.fee_paid = 0 ORDER BY b.batch, s.student_name;
--- 2. Collection per batch and teacher, only batches with many unpaid months
+WHERE f.month = 'Oct' AND f.fee_paid = 0;
+-- 2. Aggregation with GROUP BY and HAVING: collection per batch and teacher
 SELECT b.batch, t.teacher, sum(f.fee_paid) AS collected,
        count(*) FILTER (WHERE f.fee_paid = 0) AS unpaid
 FROM fee_register f JOIN students s ON s.id = f.student_id
      JOIN batches b ON b.id = s.batch_id JOIN teachers t ON t.id = b.teacher_id
 GROUP BY b.batch, t.teacher
 HAVING count(*) FILTER (WHERE f.fee_paid = 0) > 25 ORDER BY collected DESC;
--- 3. Rank students within their batch by total paid (window function)
-SELECT batch, student_name, total,
-       rank() OVER (PARTITION BY batch ORDER BY total DESC) AS rank_in_batch
-FROM (SELECT b.batch, s.student_name, sum(f.fee_paid) AS total
-      FROM fee_register f JOIN students s ON s.id = f.student_id
-           JOIN batches b ON b.id = s.batch_id
-      GROUP BY b.batch, s.student_name) t
-ORDER BY batch, rank_in_batch;
+-- 3. Subquery: students who never missed a payment
+SELECT s.student_name, b.batch
+FROM students s JOIN batches b ON b.id = s.batch_id
+WHERE NOT EXISTS (SELECT 1 FROM fee_register f
+                  WHERE f.student_id = s.id AND f.fee_paid = 0);
 \end{lstlisting}
 
-\subsection{Query Sandbox}
+\subsection{Query Screen and Security}
 \label{sec:design-sandbox}
 
 \InputIfFileExists{figures/sequence-query}{}{}
 
-\stdone{} A user query never runs on the application's pooled connection (\cref{fig:seq-query}). The
-validator parses it with pglast, the PostgreSQL parser itself, walking the tree iteratively with a token
-cap: it must be exactly one \code{SELECT} (set operations allowed), without \code{INTO}, locking clauses or
-data-modifying CTEs, and without functions on a denylist (\code{set\_config}, \code{pg\_read\_file},
-\code{dblink}, \code{query\_to\_xml} and others). The validator gives friendly errors but is not the
-security boundary. The runner opens a fresh login as \code{qlens\_ws\_<id>}, starts a \code{READ ONLY}
-transaction, sets a local \code{statement\_timeout} of at most 5\,s, declares a cursor for the query with
-the extended protocol (which refuses a second statement) and fetches 1{,}001 rows, so that a 1{,}000-row cap
-and a \emph{truncated} flag need no full materialization; it always rolls back. A timeout is reported as
-SQLSTATE 57014. Every run, failed or not, is then inserted into \tbl{query\_runs}, where the trigger of
-\cref{lst:trigger} updates the saved query.
+Users can type any SQL, so the query screen has to be safe. QLens uses database security (DCL) for
+this:
+\begin{enumerate}
+  \item When a workspace is created, QLens runs \code{CREATE ROLE qlens\_ws\_<id> LOGIN \dots{}} and grants
+  it only \code{USAGE} and \code{SELECT} on that workspace's schemas. It gets nothing on \code{qlens} or on
+  other workspaces, so \code{SELECT * FROM qlens.users} fails with ``permission denied''.
+  \item The role's default is a read-only transaction with a 5-second statement time limit.
+  \item Before running, QLens checks with the PostgreSQL parser (pglast) that the text is exactly one
+  \code{SELECT}.
+  \item The query runs through a \emph{cursor}, which returns rows a few at a time. QLens fetches 1{,}001
+  rows: if the 1{,}001st exists, the result is marked as cut at 1{,}000 rows.
+  \item Every run, successful or not, is stored in \code{query\_runs}.
+\end{enumerate}
 
-\subsection{Interface and Assistant}
+\begin{lstlisting}[float=tbp,caption={[Cursor in the query screen]Statements the query screen runs as the restricted user},label={lst:cursor}]
+BEGIN READ ONLY;
+SELECT set_config('statement_timeout', '5000', true);
+DECLARE qlens_run NO SCROLL CURSOR WITHOUT HOLD FOR <the user's SELECT>;
+FETCH FORWARD 1001 FROM qlens_run;
+ROLLBACK;
+\end{lstlisting}
+
+\subsection{User Interface}
 \label{sec:design-ui}
 
-Each generated table keeps one lane colour (\code{proposed\_tables.color\_index}) on the Analyze diagram,
-the design canvas, the SQL and these figures. The landing page, dashboard, Analyze screen (keys banner and
-a dependency graph, dashed when approximate) and the design canvas are \stdone. The canvas
-(\cref{fig:design}) shows the proposal as draggable tables on a dot grid with inline renaming, the
-reasons for each table, the SQL and the Apply button with the lossless result. Motion is staged and uses
-only \code{transform}, \code{opacity} and \code{stroke-dashoffset}; it stops under
-\code{prefers-reduced-motion}.
+The screens follow the steps of \cref{fig:pipeline}. Each generated table keeps one colour on every
+screen. \Cref{fig:ui-import,fig:ui-analyze,fig:ui-design,fig:ui-applied,fig:ui-query} show the main
+screens with the fee register.
 
-\begin{figure}[htbp]
-  \centering
-  \IfFileExists{screenshots/design-erd-dark.png}{%
-    \fcolorbox{rule}{white}{\includegraphics[width=0.72\linewidth]{screenshots/design-erd-dark.png}}}{}
-  \caption[Design canvas]{The design canvas: the proposed fee-register schema as an ER diagram, with the
-  reasons for each table and the Apply action.}
-  \label{fig:design}
-\end{figure}
+\newcommand{\uishot}[4]{%
+  \begin{figure}[htbp]\centering
+  \IfFileExists{screenshots/#1.png}{\fcolorbox{rule}{white}{\includegraphics[width=0.985\textwidth,keepaspectratio]{screenshots/#1.png}}}{}
+  \caption[#3]{#4}\label{fig:ui-#2}\end{figure}}
+\uishot{import-crop}{import}{Import screen}{Import screen: each column with its data type, empty values, distinct values and common values.}
+\uishot{analyze-crop}{analyze}{Analyze screen}{Analyze screen: the row identity (candidate key) and the dependencies between columns; dashed arrows hold except on a few rows.}
+\uishot{design-erd-dark}{design}{Design screen}{Design screen: the proposed tables with primary and foreign keys, and the reason for each table.}
+\uishot{design-applied-dark}{applied}{Design screen after Apply}{After Apply: the tables exist and the lossless-join check passed (3{,}000 rows rebuilt exactly). Here the user had renamed \code{students} to \code{learners}.}
+\uishot{query-dark}{query}{Query screen}{Query screen: a join with \code{GROUP BY} on the new tables, run by the read-only user.}
 
-\stwip{} An optional Gemini assistant floats over the canvas as a command bar. By function calling it
-either answers a question or reworks the draft, but only through server-validated tools:
-\code{describe\_schema}, \code{check\_dependency} (runs \code{qlens.check\_fd}), \code{run\_sql} (through the
-sandbox), \code{explain\_query}, \code{rename\_table}/\code{rename\_column}, \code{set\_dependency\_accepted}
-(re-synthesizes) and \code{move\_column}, allowed only when \code{check\_fd} shows the move is exact. Edits
-create new draft versions, so they can be undone, and conversations are stored in \code{qlens}.
+\paragraph{Assistant.} \stwip{} An optional assistant (Gemini) can answer questions about the design and
+change the draft design, but only through checked actions such as renaming a table or accepting a
+dependency; each action is validated with SQL (for example with \code{check\_fd}) before it is applied,
+and every change can be undone. Its backend is built and its screen is being finished.

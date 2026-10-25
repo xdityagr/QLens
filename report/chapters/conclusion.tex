@@ -1,31 +1,31 @@
 \chapter{Conclusion}
 \label{ch:conclusion}
 
-QLens shows that a person who owns only a messy spreadsheet can be taken, step by step and with every
-step explained, to a verified third-normal-form database. Type inference, key search and dependency
-discovery run inside PostgreSQL through PL/pgSQL and dynamic SQL; near-duplicates are found with
-\code{pg\_trgm} over a GIN index; repairs are transactional and audited; the synthesis is Bernstein's
-algorithm with a key relation, property-tested for 3NF and losslessness; and the apply step proves on
-the real rows, with \code{EXCEPT ALL} in both directions inside one transaction, that nothing was lost.
-On the fee register every planted problem is found and the expected four-table design rebuilds all
-3{,}000 rows exactly. Around this sits a 22-table metadata schema that uses generated columns, \code{CHECK}
-rules, partial unique indexes, triggers and window-function views, and a per-workspace login role that
-isolates users by privilege. 302 backend and 63 frontend tests pass.
+QLens shows that a database can be designed from the data itself. Starting from one spreadsheet, it
+finds functional dependencies and candidate keys with SQL, helps the user correct inconsistent values,
+computes a canonical cover, and applies the 3NF decomposition algorithm. The resulting tables are in
+third normal form, preserve the dependencies, and are created and filled in a single transaction that
+is kept only if the lossless-join check passes on the real rows. On the sample fee register all 13
+faulty rows are found and the expected four tables rebuild all 3{,}000 rows exactly.
 
-\paragraph{Lessons.} Dependencies in real data are statistical before they are logical, so measuring
-violations ($g_3$) and letting the user decide was the central design decision. Normalization needs clean
-data first: a rule broken by eight typos would otherwise be lost and the design would keep a redundant
-column. Set-oriented checks belong in the database. Constraints are documentation that executes: they
-caught our own mistakes, such as an applied-design rule that let \code{NULL} pass until it was written as
-\code{IS TRUE}. And losslessness, a theorem in the textbook, becomes in practice a query.
+QLens's own data is also a normalized relational design, built from an ER model, with primary and
+foreign keys, \code{CHECK} and \code{UNIQUE} constraints, views, triggers, stored functions, a cursor,
+B-tree indexes, transactions and \code{GRANT}-based security. 302 backend and 63 frontend tests pass.
 
-\paragraph{Limitations.} Left-hand sides are limited to two columns and keys to three; noise filtering
-relies on thresholds, so the user keeps the final say; one flat sheet of up to 100{,}000 rows is
-normalized at a time, and only to 3NF; trigram similarity cannot know that two people share a name; and
-the evidence comes from synthetic samples and tests, not a user study. The assistant is \stwip{}, and the performance laboratory and step-through visualizer are \stplan.
+\paragraph{What we learnt.}
+\begin{itemize}
+  \item Real data is never perfect: a dependency may fail on a few rows because of typing errors, so
+  data must be cleaned before it is normalized.
+  \item Letting the database do the work (\code{GROUP BY}, constraints, transactions) keeps the
+  application simple and the result correct.
+  \item Constraints catch mistakes early; for example, a design cannot be marked applied unless its
+  lossless-join check passed.
+  \item Lossless join, a theorem in the textbook, can be checked with one SQL query.
+\end{itemize}
 
-\paragraph{Future work.} Completing the validated assistant; a
-performance laboratory that renders \code{EXPLAIN (ANALYZE, BUFFERS)} as a tree and times index
-experiments on a scaled copy; a clause-by-clause visualizer for teaching; wider dependency search with
-sampling and multivalued dependencies for 4NF; and resource limits for hosted, multi-tenant use, which the
-per-workspace role design was chosen to make possible.
+\paragraph{Limitations.} Dependencies are searched with at most two columns on the left-hand side and
+keys with at most three columns; one sheet is normalized at a time and only up to 3NF; and the results
+come from sample data, not a study with real users.
+
+\paragraph{Future work.} Finish the Data screen, the performance lab and the assistant's screen; support
+several sheets at once; and detect multivalued dependencies for 4NF.

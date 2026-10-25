@@ -1,92 +1,89 @@
 \chapter{Introduction}
 \label{ch:introduction}
 
-Small offices run on one ever-growing spreadsheet. A coaching institute's fee register is typical: one
-row per student per month, with the student's name and phone, the batch, the batch teacher and the
-teacher's phone, the month, the fee paid and the payment mode. Over a year it reaches thousands of rows
-and develops the classic anomalies of an unnormalized relation \cite{codd1970,kent1983}:
+A \emph{database management system} (DBMS) stores data in tables that are designed so that each fact is
+kept once. Many small offices do not use one; they keep everything in a single spreadsheet. A coaching
+institute's fee register is a typical example. Each row records one student's payment for one month:
+
+\begin{table}[htbp]
+\centering
+\caption[Part of the fee register]{Four rows of the sample fee register (3{,}000 rows in all).}
+\label{tab:sheet}
+\scriptsize\setlength{\tabcolsep}{3.5pt}
+\begin{tabular}{@{}lllllllr@{}}
+\toprule
+Student Name & Student Phone & Batch & Teacher & Teacher Phone & Month & Fee Paid & Mode \\
+\midrule
+Neha Sharma & +91 98364 94403 & JEE Morning & Mr. Gupta & +91 98100 99009 & Apr & 4000 & Cash \\
+Diya Patel & +91 90943 46358 & JEE Evening & Mr. Gupta & +91 98100 99009 & Apr & 3000 & Cash \\
+Riya\ \ Sharma & +91 99909 46477 & JEE Evening & Mr. Gupta & +91 98100 11001 & Jun & 4000 & Cash \\
+riya sharma & +91 99909 46477 & JEE Evening & Mr. Gupta & +91 98100 11001 & Jul & 4000 & Cash \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+The sheet is an \emph{unnormalized relation}: one table holds facts about students, batches, teachers
+and payments together. This causes the classic problems taught in normalization \cite{silberschatz2019}:
 
 \begin{itemize}
-  \item \textbf{Update anomaly.} A teacher's phone number is repeated on every row of every student of
-  that teacher; when it changes, a few old rows are always missed, and the sheet now holds two numbers.
-  \item \textbf{Inconsistency.} ``Riya Sharma'' and ``riya sharma'' are counted as two students, so totals
-  and dues are wrong.
-  \item \textbf{Insertion and deletion anomalies.} A new teacher cannot be recorded until a student pays;
-  deleting the last row of a batch deletes the only record of who teaches it.
-  \item \textbf{Query cost.} ``Who has not paid for October?'' takes an hour of filtering.
+  \item \textbf{Update anomaly.} Mr.\ Gupta's phone number is stored on every row of every one of his
+  students. When it changed, some old rows were missed, so the sheet now has two numbers for him.
+  \item \textbf{Inconsistent data.} ``Riya\ \ Sharma'' and ``riya sharma'' are the same student written in
+  two ways, so counts and totals are wrong.
+  \item \textbf{Insertion and deletion anomalies.} A new teacher cannot be recorded until a student pays,
+  and deleting the last row of a batch loses the only record of who teaches it.
 \end{itemize}
 
-In database terms the sheet violates third normal form: \code{teacher\_phone} depends on
-\code{teacher}, which depends on \code{batch}, which depends on the student, which is only part of the
-key (\code{student\_name}, \code{month}). The people who suffer from this do not know the vocabulary,
-and the tools they use do not help: database front-ends such as Airtable or NocoDB expect the user to
-design the tables, and chat assistants answer one question about a file without leaving a correct
-database behind.
+The users of such sheets do not know how to design tables, and existing tools do not help: database
+front-ends such as Airtable expect the user to design the tables, and chat assistants answer one question
+but do not leave a correct database behind.
 
-\textbf{QLens} closes this gap. It reads the sheet into PostgreSQL, discovers from the data itself which
-columns determine which (functional dependencies) and which columns identify a row (candidate keys),
-shows the rows that break an almost-true rule as inconsistencies, finds near-duplicate spellings, and
-then synthesizes a third-normal-form design \cite{bernstein1976}. With one click the design is created as
-real tables with primary, unique and foreign keys, the data is migrated in a single transaction, and the
-migration is accepted only if joining the new tables back gives exactly the original rows. The
-objectives were therefore:
+\textbf{QLens} solves this. It loads the sheet into PostgreSQL and finds, from the data itself, which
+columns decide which other columns (\emph{functional dependencies}) and which columns identify a row
+(\emph{candidate keys}). It then designs tables in third normal form, creates them with keys and
+foreign keys, copies the data, and checks that no row was lost. The \textbf{objectives} were:
 
 \begin{enumerate}[label=O\arabic*.]
-  \item Do the analysis \emph{inside} the database, with SQL and PL/pgSQL, so that its correctness rests
-  on the same engine that will hold the data.
-  \item Produce designs that are provably in 3NF and lossless, and verify losslessness on the real rows.
-  \item Isolate every user and workspace by PostgreSQL privileges, not by application convention.
-  \item Present every result in plain language, for users who have never written SQL.
+  \item Find functional dependencies and keys using SQL inside the database.
+  \item Produce tables in 3NF whose decomposition is lossless and dependency-preserving, and check the
+  lossless join on the real rows.
+  \item Keep every user's data separate using database users (roles) and \code{GRANT}.
+  \item Explain every result in plain language.
 \end{enumerate}
-
-\begin{figure}[htbp]
-  \centering
-  \IfFileExists{screenshots/landing-hero.png}{%
-    \fcolorbox{rule}{white}{\includegraphics[width=0.72\linewidth]{screenshots/landing-hero.png}}}{}
-  \caption[Landing page]{The QLens landing page: one messy sheet in, clean related tables out.}
-  \label{fig:landing-hero}
-\end{figure}
 
 \section{Scope of the Work}
 \label{sec:scope}
 
-\paragraph{In scope.} Import of one CSV or XLSX sheet per workspace (up to 20\,MB, 100{,}000 rows and
-60 columns); SQL type inference and profiling; discovery of candidate keys of up to three columns and of
-exact and approximate functional dependencies with a left-hand side of up to two columns; near-duplicate
-detection and repair with an audit log; minimal cover and 3NF synthesis; generation of the DDL; a
-transactional apply with a lossless check; a sandboxed, read-only query editor with history; and
-three bundled sample sheets with planted errors (a coaching fee register, a kirana shop's sales and a
-hostel mess register) so that the product can be demonstrated without private data. QLens keeps its own
-records in a normalized metadata schema, which is itself a main subject of this report.
+\paragraph{In scope.}
+\begin{itemize}
+  \item Import of one CSV or Excel sheet per workspace (up to 100{,}000 rows and 60 columns).
+  \item Finding functional dependencies and candidate keys, and fixing data errors.
+  \item Designing 3NF tables, creating them and loading the data in one transaction.
+  \item A read-only SQL query screen with a history of every query.
+  \item Three sample sheets with known errors: a coaching fee register, a grocery (kirana) shop's sales
+  and a hostel mess register.
+\end{itemize}
 
-\paragraph{Out of scope.} Other database engines, multi-sheet workbooks, live collaboration, writes from
-the query editor, normal forms beyond 3NF (BCNF can lose dependencies; 3NF synthesis cannot), and the
-hardening needed for public multi-tenant hosting. QLens runs locally on one laptop against a private
-PostgreSQL 18 cluster.
+\paragraph{Out of scope.} Other database systems, several sheets at once, normal forms beyond 3NF
+(4NF and 5NF), and changing data from the query screen. QLens runs on one computer with its own
+PostgreSQL 18 server.
 
-\paragraph{Status.} The report describes the system at the time of submission and marks each capability
-as \stdone{} (implemented and covered by automated tests: 302 backend tests and 63 frontend tests pass),
-\stwip{} (partly implemented) or \stplan{} (designed, not yet started). Nothing is described as working
-unless it is marked \stdone.
+\paragraph{Status.} Each feature is marked \stdone{} (finished and tested), \stwip{} (partly done) or
+\stplan{} (designed, not started). Nothing is described as working unless it is marked \stdone.
 
 \section{Product Scenarios}
 \label{sec:scenarios}
 
-\paragraph{The coaching-institute owner.} \stdone{} The owner imports the fee register (3{,}000 rows:
-300 students, 8 batches, 6 teachers, 10 months). QLens reports the keys (\code{student\_name},
-\code{month}) and (\code{student\_phone}, \code{month}), six core dependencies, and two inconsistencies:
-four students spelled differently on 8 rows, and Mr.~Gupta's old phone number on 5 rows. After
-``accept all suggestions'' it proposes \tbl{students}, \tbl{batches}, \tbl{teachers} and
-\tbl{fee\_register}; applying the design rebuilds all 3{,}000 rows exactly. A teacher's phone is now
-stored once.
+\paragraph{The institute owner.} \stdone{} The owner imports the fee register. QLens reports that
+\emph{(Student Name, Month)} identifies every row, that Batch decides Teacher, and that Teacher decides
+Teacher Phone except on 5 rows. After the owner accepts the suggested fixes, QLens proposes four tables
+(students, batches, teachers and fee records) and creates them. A teacher's phone is now stored once,
+and ``who has not paid for October?'' is a short SQL query.
 
-\paragraph{The developer migrating legacy data.} \stdone{} A developer uploads an undocumented CSV export
-and reads off the keys and dependencies that actually hold, with the share of violating rows next to each
-approximate one, which shows where the legacy data cannot be trusted. The proposal comes with generated
-\code{CREATE TABLE} statements that can be copied into the application's migrations, or QLens can migrate
-the data itself and prove that nothing was lost.
+\paragraph{The developer.} \stdone{} A developer must move an old CSV export into an application
+database. QLens shows the keys and dependencies that really hold in the data and gives the
+\code{CREATE TABLE} statements, ready to copy.
 
-\paragraph{The student learning normalization.} \stdone{} A student opens the hostel mess sample and
-sees why \code{room} determines \code{hostel\_block}, how the minimal cover is derived and why each table
-of the proposal exists, then queries the result with joins, grouping and window functions. A
-clause-by-clause visualizer and a performance laboratory with real execution plans are \stplan.
+\paragraph{The student.} \stdone{} A student studying normalization opens the hostel sample, sees why
+Room decides Hostel Block, follows the canonical cover and the 3NF design step by step, and then
+practises joins and aggregate queries on the result.

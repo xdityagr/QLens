@@ -1,28 +1,22 @@
 # Report status
 
-Build: `latexmk -pdf main.tex` (or `.\build.ps1` / `make`) -> `report/main.pdf`, 28 pages, no overfull boxes,
-no undefined references. Format: 12pt, 1.15 line spacing, TOC depth 1 (fits one page), short captions.
+Build: `latexmk -g -pdf main.tex` -> `report/main.pdf`, 29 pages, no overfull boxes, no undefined references.
+Title: "QLens: An Automated Relational Database Design and Normalization System".
 
-## Structure (format order)
-Cover, Abstract, TOC, List of Figures, List of Tables; 1 Introduction (1.1 Scope of the Work, 1.2 Product
-Scenarios); 2 Requirement Analysis (FR, NFR, Use Case Scenarios, Other SE Methodologies with test summary);
-3 System Design (Design Goals, System Architecture, Detailed Design Methodologies); 4 Conclusion; References;
-Appendix A (sample datasets, screen gallery).
-
-## Status markers (update when built)
-- Built: import, discovery, clean-up, 3NF synthesis, proposal + DDL, apply + lossless check, landing,
-  dashboard, Analyze.
-- Built since: design canvas (FR-8), sandboxed query runner (FR-9). In progress (`\stwip`): assistant (FR-10).
-- Planned (`\stplan`): performance lab and step-through (FR-11).
-- Test counts: 302 backend, 63 frontend.
-- Database design (3.3.1-3.3.7): ER (qlens), relational schema, keys table, normalization, constraints + indexes, triggers/views/functions/roles, SQL-per-feature table, generated fee-register ER, example queries (real outputs from applied workspace 24).
+## Approach
+Syllabus vocabulary only (CSC2103): ER model (textbook notation: rectangles, diamonds, 1/N/M), ER to
+relational schema, keys and integrity constraints, DDL/DML/DCL, joins, subqueries, views, aggregation,
+triggers, cursors, stored functions, B-tree indexing, transactions/ACID, functional dependencies,
+closure, canonical cover, 3NF decomposition, lossless join (relational algebra), dependency preservation.
+Removed: crow's-foot, Bernstein/minimal-cover naming, trigram/GIN, window functions, g3, plan internals.
 
 ## Figures
-architecture, er (one landscape page from er-part1 + er-part2), pipeline, usecase, fee-example,
-sequence-query, bernstein (algorithm). Screenshots used: landing-hero, dashboard-dark, import-dark,
-analyze-issues-dark; gallery: login-dark, landing-how, dashboard-light, analyze-clean-dark.
+architecture (3-tier), er (conceptual ER of qlens), relational schema (26 tables), usecase, pipeline,
+fee-example (dependency diagram), alg:synthesis, er-generated (fee register ER), seq-query (7 steps).
+Body screenshots (5, full width, 16:10): import-crop, analyze-crop, design-erd-dark, design-applied-dark,
+query-dark. Appendix: landing-hero, dashboard-dark, history-crop. Crops made with PIL; originals untouched.
 
-## Open
-- University logo: put figures/muj-logo.png (4.56in x 0.9in) to replace the framed placeholder.
-- When the canvas/query runner/assistant land: flip their markers, solidify their modules in
-  figures/architecture.tex, and add a design-canvas screenshot (replace analyze-clean in the gallery).
+## Status markers
+Built: import, analysis, clean-up, design, design screen, apply, query screen. In progress: Data screen
+(row_changes + audit trigger, migration 006 uncommitted), performance lab, assistant screen.
+Tests: 302 backend, 63 frontend.

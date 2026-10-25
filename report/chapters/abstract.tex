@@ -2,39 +2,29 @@
 \addcontentsline{toc}{chapter}{Abstract}
 \markboth{Abstract}{}
 
-Small offices keep their records in a single, ever-growing spreadsheet. A coaching institute's fee
-register repeats every teacher's phone number on hundreds of rows, spells the same student three
-different ways, and needs an hour of filtering to answer ``who has not paid for October?''. These are
-the update, insertion and deletion anomalies that normalization theory was invented to remove, but the
-people who suffer from them have never heard the terms and the tools they use do not help: database
-front-ends expect the user to design the tables, and chat-style assistants answer one question
-without leaving a correct database behind.
+Many small offices keep all their records in one large spreadsheet. A coaching institute's fee
+register, for example, repeats every teacher's phone number on hundreds of rows and spells some
+students' names in more than one way. In database terms the sheet is an unnormalized relation, and it
+suffers from update, insertion and deletion anomalies. The people who use it do not know how to design
+a database, so the problem stays.
 
-QLens is a local web application that takes such a sheet and produces a normalized PostgreSQL database
-from the data itself. The file is copied unchanged into a raw table and a typed staging table, with
-column types inferred by SQL. Candidate keys and functional dependencies are then discovered inside the
-database by PL/pgSQL functions (\code{qlens.check\_fd}, \code{qlens.is\_unique}) that group the staged
-rows with dynamic SQL; a dependency that holds on all but a few rows is reported as a data
-inconsistency together with the rows that break it. Near-duplicate spellings are found with
-\code{pg\_trgm} trigram similarity over a GIN index, and every repair is logged. From the accepted exact
-dependencies QLens computes a minimal cover and runs Bernstein's 3NF synthesis, extended with a key
-relation so that the decomposition is always lossless, and turns the result into tables with surrogate
-keys, \code{UNIQUE NULLS NOT DISTINCT} natural keys and foreign keys. The design is applied in a single
-transaction and accepted only if a view that joins the new tables back together returns exactly the
-staged rows, compared as multisets with \code{EXCEPT ALL} in both directions.
+QLens is a web application that designs a relational database \emph{from the data in the sheet}. It
+loads the sheet into PostgreSQL, finds the functional dependencies and candidate keys by running SQL
+queries on the data, and helps the user correct spelling variants and conflicting values. From the
+dependencies it computes a canonical cover and applies the 3NF decomposition algorithm, which gives
+tables that are in third normal form, preserve the dependencies and have a lossless join. QLens then
+creates these tables with primary keys, foreign keys and \code{UNIQUE} constraints, copies the data into
+them inside a single transaction, and keeps the result only if joining the new tables back together
+gives exactly the original rows. Afterwards the user can query the new database with SQL, run safely
+by a restricted, read-only database user.
 
-QLens keeps its own metadata in a normalized \code{qlens} schema of 22 tables with CHECK constraints,
-generated columns, triggers and views that use window functions. Each workspace has its own schemas and
-its own low-privilege PostgreSQL login role, so user queries are isolated by privileges rather than by
-convention. On the bundled 3{,}000-row fee register the analysis finds the two composite candidate keys,
-six core dependencies and the 13 planted faulty rows, and proposes the textbook four-table design
-(\tbl{students}, \tbl{batches}, \tbl{teachers}, \tbl{fee\_register}); applying it rebuilds all 3{,}000
-rows exactly. The algorithms are verified by unit tests on textbook examples, by 900 randomized synthesis
-cases checked against a chase-based lossless-join oracle and a brute-force 3NF test, and by end-to-end
-tests that apply the generated SQL to randomly generated sheets (302 backend and 63 frontend tests
-pass). Applied designs are queried in a sandboxed, read-only SQL editor; a tool-using assistant is
-in progress, and every capability is marked with its build status.
+QLens stores its own data in a normalized PostgreSQL schema that uses most topics of the course:
+an ER model converted to relational tables, keys and integrity constraints, views, triggers, cursors,
+stored functions, indexes, transactions and GRANT-based access control. On the sample fee register
+(3{,}000 rows) QLens finds every planted error and produces the expected four tables (students,
+batches, teachers and fee records), and rebuilds all 3{,}000 rows exactly. 302 backend and 63 frontend
+automated tests pass.
 
 \medskip
-\noindent\textbf{Keywords:} functional dependency discovery, third normal form, Bernstein synthesis,
-lossless-join decomposition, PostgreSQL, PL/pgSQL, role-based isolation, data cleaning, \code{pg\_trgm}.
+\noindent\textbf{Keywords:} relational database design, functional dependency, normalization,
+third normal form, lossless join, dependency preservation, SQL, PostgreSQL.

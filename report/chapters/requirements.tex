@@ -1,108 +1,102 @@
 \chapter{Requirement Analysis}
 \label{ch:requirements}
 
-The requirements come from the anomalies of \cref{ch:introduction}, from the three target users and
-from the three sample sheets, whose planted errors double as acceptance tests.
+The requirements come from the problems of \cref{ch:introduction} and from the three sample sheets,
+whose planted errors are used as acceptance tests.
 
 \section{Functional Requirements}
 \label{sec:functional}
 
 \begin{table}[htbp]
 \centering
-\caption[Functional requirements]{Functional requirements and their implementation status.}
+\caption[Functional requirements]{Functional requirements and their status.}
 \label{tab:functional}
 \small
 \begin{tabularx}{\textwidth}{@{}l X c@{}}
 \toprule
 \textbf{ID} & \textbf{Requirement} & \textbf{Status} \\
 \midrule
-FR-1 & \textbf{Accounts and workspaces.} Sign-up and sign-in; each workspace gets its own schemas and database role. & \stdone \\
-FR-2 & \textbf{Import.} CSV (encoding and delimiter detected) or XLSX; raw cells kept unchanged in \code{\_raw}. & \stdone \\
-FR-3 & \textbf{Type inference and profile.} Infer integer, numeric, boolean, date (incl.\ day-first) or text in SQL; null and distinct counts. & \stdone \\
-FR-4 & \textbf{Key and FD discovery.} Candidate keys (1--3 columns), exact and approximate dependencies (LHS 1--2), computed in PostgreSQL. & \stdone \\
-FR-5 & \textbf{Clean-up.} Near-duplicate groups via trigram similarity; conflicting rows of approximate dependencies with a suggested value; every edit logged. & \stdone \\
-FR-6 & \textbf{3NF proposal.} Minimal cover, Bernstein synthesis, surrogate and foreign keys, names, explanations, DDL; renames while a draft. & \stdone \\
-FR-7 & \textbf{Apply.} Create and load the tables in one transaction; commit only if the join of the new tables equals the cleaned rows. & \stdone \\
-FR-8 & \textbf{Design canvas.} Draggable ER diagram with rename, SQL panel and apply. & \stdone \\
-FR-9 & \textbf{Sandboxed queries and history.} Read-only SELECTs as the workspace role, timeout and row cap; saved queries and run log. & \stdone \\
-FR-10 & \textbf{Assistant.} Optional Gemini command bar: answers questions, edits the draft only through validated tools. & \stwip \\
-FR-11 & \textbf{Performance lab and step-through.} Plan tree from \code{EXPLAIN ANALYZE}, index experiments, clause-by-clause row counts. & \stplan \\
-FR-12 & \textbf{Samples.} Three generated sheets with known, planted problems. & \stdone \\
+FR-1 & \textbf{Accounts and workspaces.} Sign up and sign in; each workspace has its own schema and database user. & \stdone \\
+FR-2 & \textbf{Import.} Read a CSV or Excel sheet; keep the original cells unchanged; decide each column's data type. & \stdone \\
+FR-3 & \textbf{Keys and dependencies.} Find candidate keys (1--3 columns) and functional dependencies using SQL. & \stdone \\
+FR-4 & \textbf{Clean-up.} Find similar spellings and conflicting values; let the user fix them; log every change. & \stdone \\
+FR-5 & \textbf{3NF design.} Canonical cover, 3NF decomposition, primary and foreign keys, the \code{CREATE TABLE} script. & \stdone \\
+FR-6 & \textbf{Design screen.} Show the design as a diagram; rename tables and columns before applying. & \stdone \\
+FR-7 & \textbf{Apply.} Create and fill the tables in one transaction; keep them only if the lossless-join check passes. & \stdone \\
+FR-8 & \textbf{Query screen.} Run read-only \code{SELECT} queries; save queries; keep a history of runs. & \stdone \\
+FR-9 & \textbf{Data screen.} Add, edit and delete rows in the new tables; show constraint errors; record every change with a trigger. & \stwip \\
+FR-10 & \textbf{Assistant.} Answer questions and edit the draft design only through checked actions (backend built, screen in progress). & \stwip \\
+FR-11 & \textbf{Performance lab.} Compare a query's time with and without an index. & \stwip \\
 \bottomrule
 \end{tabularx}
 \end{table}
-
 
 \section{Non-functional Requirements}
 \label{sec:nonfunctional}
 
 \begin{table}[htbp]
 \centering
-\caption[Non-functional requirements]{Non-functional requirements and the mechanism that meets each.}
+\caption[Non-functional requirements]{Non-functional requirements and how they are met.}
 \label{tab:nonfunctional}
 \small
 \begin{tabularx}{\textwidth}{@{}l l X@{}}
 \toprule
-\textbf{ID} & \textbf{Quality} & \textbf{Mechanism} \\
+\textbf{ID} & \textbf{Quality} & \textbf{How it is met} \\
 \midrule
-NFR-1 & Isolation & One PostgreSQL \code{LOGIN} role per workspace with privileges only on its schemas; read-only sessions, 5\,s \code{statement\_timeout}, 1{,}000-row cap. \\
-NFR-2 & Correctness & 3NF and losslessness by construction, property-tested; \code{EXCEPT ALL} check on the real rows at apply time. \\
-NFR-3 & Integrity & The database rejects bad metadata: \code{CHECK}, \code{UNIQUE}, foreign keys, generated columns, partial unique indexes. \\
-NFR-4 & Atomicity & Import, every clean-up and apply each run in one transaction; failure leaves no partial state. \\
-NFR-5 & Performance & Analysis of the 3{,}000-row sample runs inside PostgreSQL within the 5\,s bound asserted by a test; trigram search uses a GIN index. \\
-NFR-6 & Auditability & \code{\_raw} is never edited; each fix is logged in \code{dataset\_fixes} with old value, new value and row count. \\
-NFR-7 & Security & Argon2id password hashes; only SHA-256 digests of session tokens stored; every identifier quoted, every value bound. \\
-NFR-8 & Usability & Plain-English findings, light and pure-black themes, motion that respects reduced-motion settings. \\
+NFR-1 & Security & Each workspace has its own database user that can only read its own schema (\code{GRANT SELECT}); queries run read-only with a 5-second limit and at most 1{,}000 rows. \\
+NFR-2 & Correctness & The design is in 3NF, lossless and dependency-preserving; the lossless join is also checked on the real rows. \\
+NFR-3 & Integrity & Primary keys, foreign keys, \code{UNIQUE}, \code{NOT NULL} and \code{CHECK} constraints are enforced by the database. \\
+NFR-4 & Atomicity & Import, every fix and apply each run as one transaction; a failure leaves nothing half done. \\
+NFR-5 & Performance & Analysis of the 3{,}000-row sample finishes within 5 seconds (checked by a test). \\
+NFR-6 & Auditability & The original rows are never changed; every fix is logged with the old and new value. \\
+NFR-7 & Usability & Results in plain English, light and dark themes. \\
 \bottomrule
 \end{tabularx}
 \end{table}
-
-A text filter such as ``the statement must start with \code{SELECT}'' is easily bypassed with a
-comment, a CTE or a function that writes. NFR-1 is therefore met by layers that fail independently:
-privileges, a read-only transaction, a timeout and a row cap, all enforced by PostgreSQL itself
-\cite{postgres18docs}.
 
 \section{Use Case Scenarios}
 \label{sec:usecases}
 
 \InputIfFileExists{figures/usecase}{}{}
 
-\Cref{fig:usecase} shows the use cases. Importing, reviewing data health, cleaning, generating and
-applying a design, and querying the result are \stdone; asking the assistant is \stwip; studying a
-query in the performance lab or step-through is \stplan. Apply is the critical one: it either rebuilds
-every row exactly or changes nothing (\cref{sec:design-apply}).
-
+\Cref{fig:usecase} shows the use cases. The main flow is:
+\begin{enumerate}
+  \item The user imports a sheet (or a sample).
+  \item QLens shows keys, dependencies and data problems; the user fixes the problems.
+  \item QLens proposes a 3NF design; the user may rename tables or columns.
+  \item The user applies the design: the tables are created, filled and checked in one transaction.
+  \item The user queries the new tables in the Query screen.
+\end{enumerate}
 
 \section{Other Software Engineering Methodologies}
 \label{sec:methodologies}
 
-\paragraph{Iterative, test-driven delivery.} The system was built in thin vertical increments in the
-order of value: database foundation and accounts, then import, discovery, clean-up, synthesis, proposal
-and apply, then querying. Each increment started from failing tests \cite{beck2002} and was followed by
-a review whose findings became regression tests; for example, a randomized test showed that plain
-synthesis without a key relation was lossy in 74 of 3{,}000 random cases, which led to the key step of
-\cref{alg:bernstein}. The schema is managed by numbered SQL migrations applied by a small runner, and
-the test database is rebuilt from them at the start of every session.
+\paragraph{Incremental, test-first development.} QLens was built in small steps in order of value:
+database and accounts, import, analysis, clean-up, design, apply, querying. For each step the tests were
+written first. One example: a randomized test showed that the decomposition lost rows in 74 of 3{,}000
+random cases when no table contained a candidate key, which is why the algorithm adds a key table
+(\cref{alg:synthesis}). The database schema is created by numbered SQL migration files, so every
+computer gets exactly the same schema.
 
-\paragraph{Test results.} \Cref{tab:tests} summarizes the suites. Database tests run against a real
-PostgreSQL 18 instance, because the central logic lives in SQL and cannot be meaningfully mocked.
+\paragraph{Test results.} Tests run against a real PostgreSQL database because most of the logic is
+in SQL (\cref{tab:tests}).
 
 \begin{table}[htbp]
 \centering
-\caption[Test summary]{Automated tests (latest full run: 302 backend cases and 63 frontend tests, all passing).}
+\caption[Test summary]{Automated tests (latest full run: 302 backend and 63 frontend tests, all passing).}
 \label{tab:tests}
 \small
 \begin{tabularx}{\textwidth}{@{}l r X@{}}
 \toprule
-\textbf{Area} & \textbf{Cases} & \textbf{What is verified} \\
+\textbf{Area} & \textbf{Tests} & \textbf{What is checked} \\
 \midrule
-Schema, migrations, auth, workspaces & 39 & constraints, generated columns, triggers, views; role and schema set-up \\
-Import (parse, stage, routes, samples) & 39 & encodings, delimiters, header names, type inference, planted errors \\
-Discovery and clean-up & 53 & \code{check\_fd}, keys, noise rules, trigram groups, fixes, rollback \\
-FD algebra & 19 & closure, minimal cover, synthesis; 900 random cases checked for 3NF and losslessness \\
-Naming, proposal and apply & 79 & FK substitution, renames, generated SQL on random sheets, apply, rollback, catalog \\
-Query runner & 73 & parser checks and denylist, sandbox isolation, timeout, row cap, value serialization, run recording \\
-Frontend (Vitest) & 63 & API client, formatting, lane colours, dashboard and analysis view models \\
+Schema, accounts, workspaces & 39 & constraints, triggers, views, database users and privileges \\
+Import & 39 & file reading, data types, sample data errors \\
+Keys, dependencies, clean-up & 53 & \code{check\_fd}, \code{is\_unique}, fixes and rollback \\
+Normalization algorithms & 19 & closure, canonical cover, 3NF; 900 random cases checked for 3NF and lossless join \\
+Design and apply & 79 & foreign keys, renames, generated SQL, apply, rollback \\
+Query screen & 73 & only one \code{SELECT}, read-only user, time limit, row limit, run history \\
+Frontend & 63 & screens' data handling and formatting \\
 \bottomrule
 \end{tabularx}
 \end{table}

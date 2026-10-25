@@ -1,12 +1,85 @@
-% Whole qlens metadata schema on one landscape page: part 1 (accounts, datasets, analysis) and
-% part 2 (designs, queries, performance lab), drawn from backend/sql/migrations/001_schema.sql.
-\begin{sidewaysfigure}
-  \centering
-  \resizebox{0.98\linewidth}{!}{%
-    \input{figures/er-part1}\hspace{1.2cm}\input{figures/er-part2}}
-  \caption[ER diagram of the metadata schema]{Entity--relationship diagram of the \code{qlens} metadata
-  schema (22 tables) in crow's-foot notation. Left: accounts, workspaces, the dataset and the analysis
-  results. Right: proposed designs, query history and the performance lab; grey boxes repeat tables from
-  the left, dashed relationships are optional (nullable foreign keys).}
-  \label{fig:er}
-\end{sidewaysfigure}
+% Conceptual ER diagram of the qlens metadata schema in textbook notation (entity sets as rectangles with
+% their key attribute underlined, relationship sets as diamonds, cardinalities 1 / N / M on the lines).
+% The full attribute lists are in the relational schema (fig:relschema).
+\begin{figure}[p]
+\centering
+\resizebox{\linewidth}{!}{%
+\begin{tikzpicture}[
+    ent/.style={draw=#1!75!black, fill=#1!8, line width=0.7pt, align=center, inner sep=4pt,
+      minimum width=2.7cm, minimum height=1.05cm, font=\sffamily\small},
+    ent/.default=lane0,
+    rel/.style={diamond, aspect=2.2, draw=ink!70, fill=white, line width=0.6pt, inner sep=1.2pt,
+      font=\sffamily\scriptsize, align=center},
+    ln/.style={line width=0.6pt, draw=ink!75},
+    card/.style={font=\sffamily\footnotesize\bfseries, text=lane7!80!black, fill=white, inner sep=1pt},
+  ]
+  \newcommand{\E}[2]{\textbf{#1}\\[-1pt]{\scriptsize #2}}
+  % ---------------- entity sets ----------------------------------------------------------------
+  \node[ent=lane0] (U)  at (1.9,  0)    {\E{User}{\underline{id}, email, name}};
+  \node[ent=lane5] (W)  at (1.9, -3.2)  {\E{Workspace}{\underline{id}, name}};
+  \node[ent=lane6] (RC) at (7.6,  0)    {\E{Row Change}{\underline{id}, op, table\_name}};
+  \node[ent=lane1] (D)  at (7.6, -3.2)  {\E{Dataset}{\underline{id}, file, rows, status}};
+  \node[ent=lane1] (C)  at (12.4,-3.2)  {\E{Column}{\underline{id}, name, type}};
+  \node[ent=lane4, minimum width=3.4cm] (F)  at (12.4,-7.6)  {\E{Functional Dependency}{\underline{id}, violating\_rows}};
+  \node[ent=lane4] (K)  at (12.4,-12.2) {\E{Candidate Key}{\underline{id}, key\_size}};
+  \node[ent=lane3] (SQ) at (1.9, -7.6)  {\E{Saved Query}{\underline{id}, title, sql\_text}};
+  \node[ent=lane3] (QR) at (1.9, -12.2) {\E{Query Run}{\underline{id}, status, duration}};
+  \node[ent=lane2] (P)  at (7.6, -7.6)  {\E{Schema Proposal}{\underline{id}, status, lossless\_ok}};
+  \node[ent=lane2] (PT) at (7.6, -12.2) {\E{Proposed Table}{\underline{id}, name, kind}};
+  \node[ent=lane2] (PC) at (7.6, -16.6) {\E{Proposed Column}{\underline{id}, name, role}};
+
+  % ---------------- relationship sets ----------------------------------------------------------
+  \node[rel] (owns)   at (1.9, -1.6)  {owns};
+  \node[rel] (holds)  at (4.75,-3.2)  {holds};
+  \node[rel] (logs)   at (4.75,-1.0)  {logs};
+  \node[rel] (hasC)   at (10.0,-3.2)  {has};
+  \node[rel] (lhs)    at (11.5,-5.4)  {LHS};
+  \node[rel] (rhs)    at (13.3,-5.4)  {RHS};
+  \node[rel] (found)  at (9.75,-5.4)  {found\\[-2pt]in};
+  \node[rel] (cons)   at (14.5,-9.9) {consists\\[-2pt]of};
+  \node[rel] (saves)  at (1.9, -5.4)  {saves};
+  \node[rel] (of)     at (1.9, -9.9)  {run of};
+  \node[rel] (runs)   at (-0.25,-7.6) {runs};
+  \node[rel] (prop)   at (7.6, -5.4)  {proposes};
+  \node[rel] (contains) at (7.6,-9.9) {contains};
+  \node[rel] (hasPC)  at (7.6, -14.4) {has};
+  \node[rel] (refs)   at (10.4,-14.4) {refers\\[-2pt]to};
+
+  % ---------------- lines with cardinalities ---------------------------------------------------
+  \draw[ln] (U) -- (owns) node[card, pos=0.15, right] {1};
+  \draw[ln] (owns) -- (W) node[card, pos=0.8, right] {N};
+  \draw[ln] (W) -- (holds) node[card, pos=0.25, above] {1};
+  \draw[ln] (holds) -- (D) node[card, pos=0.7, above] {1};
+  \draw[ln] (W.north east) -- (logs) node[card, pos=0.25, left] {1};
+  \draw[ln] (logs) -- (RC.south west) node[card, pos=0.75, left] {N};
+  \draw[ln] (D) -- (hasC) node[card, pos=0.3, above] {1};
+  \draw[ln] (hasC) -- (C) node[card, pos=0.65, above] {N};
+  \draw[ln] (C.south -| lhs) -- (lhs) node[card, pos=0.45, left] {M};
+  \draw[ln] (lhs) -- (F.north -| lhs) node[card, pos=0.55, left] {N};
+  \draw[ln] (C.south -| rhs) -- (rhs) node[card, pos=0.45, right] {1};
+  \draw[ln] (rhs) -- (F.north -| rhs) node[card, pos=0.55, right] {N};
+  \draw[ln] (D.south east) -- (found) node[card, pos=0.2, right] {1};
+  \draw[ln] (found) |- (F.west) node[card, pos=0.85, above] {N};
+  \draw[ln] (C.east) -| (cons) node[card, pos=0.3, above] {M};
+  \draw[ln] (cons) |- (K.east) node[card, pos=0.75, above] {N};
+  \draw[ln] (W) -- (saves) node[card, pos=0.3, right] {1};
+  \draw[ln] (saves) -- (SQ) node[card, pos=0.7, right] {N};
+  \draw[ln] (SQ) -- (of) node[card, pos=0.3, right] {1};
+  \draw[ln] (of) -- (QR) node[card, pos=0.7, right] {N};
+  \draw[ln] (W.west) -| (runs) node[card, pos=0.2, above] {1};
+  \draw[ln] (runs) |- (QR.west) node[card, pos=0.8, above] {N};
+  \draw[ln] (D) -- (prop) node[card, pos=0.3, right] {1};
+  \draw[ln] (prop) -- (P) node[card, pos=0.7, right] {N};
+  \draw[ln] (P) -- (contains) node[card, pos=0.3, right] {1};
+  \draw[ln] (contains) -- (PT) node[card, pos=0.7, right] {N};
+  \draw[ln] (PT) -- (hasPC) node[card, pos=0.3, right] {1};
+  \draw[ln] (hasPC) -- (PC) node[card, pos=0.7, right] {N};
+  \draw[ln] (PC.east) -| (refs) node[card, pos=0.3, above] {N};
+  \draw[ln] (refs) |- (PT.east) node[card, pos=0.75, above] {1};
+\end{tikzpicture}}
+\caption[ER diagram of the QLens database]{ER diagram of the database in which QLens stores its own
+data (schema \code{qlens}). Rectangles are entity sets with their primary key underlined, diamonds are
+relationship sets, and 1, N, M give the cardinality. Only the main attributes are shown; every
+attribute is listed in the relational schema of \cref{fig:relschema}.}
+\label{fig:er}
+\end{figure}

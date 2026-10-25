@@ -1,33 +1,26 @@
-\chapter{Sample Datasets and Screens}
+\chapter{Sample Data and More Screens}
 \label{app:samples}
-
-The three bundled sheets are generated deterministically (seed 2026), and their planted problems are
-asserted by the tests, so every demonstration sees identical numbers.
 
 \begin{table}[htbp]
 \centering
-\caption[Sample datasets]{Bundled sample sheets and their planted problems.}
+\caption[Sample sheets]{The three sample sheets and the errors planted in them.}
 \label{tab:samples}
 \small
 \begin{tabularx}{\textwidth}{@{}l r X X@{}}
 \toprule
-\textbf{Sheet} & \textbf{Rows} & \textbf{Structure} & \textbf{Planted problems} \\
+\textbf{Sheet} & \textbf{Rows} & \textbf{Contents} & \textbf{Planted errors} \\
 \midrule
-Coaching fee register & 3{,}000 & 300 students $\times$ 10 months; 8 batches, 6 teachers; key (student, month); about 8\% unpaid and 15\% partial payments & 4 names in variant spellings (8 rows); Mr.\ Gupta's old phone (5 rows); a genuine look-alike, Priya Sharma, must not be merged \\
-Kirana sales & 2{,}009 & 600 bills, 80 customers, 40 items in 6 categories; key (bill, item); amount = price $\times$ qty & old price of Toor Dal (3 rows); \emph{Mohan lal} for \emph{Mohan Lal} (3 rows) \\
-Hostel mess & 2{,}520 & 60 students $\times$ 14 days $\times$ 3 meals; room $\rightarrow$ block $\rightarrow$ warden; one menu item per (date, meal) & \emph{Mrs Rao} for \emph{Mrs.\ Rao} (2 rows) \\
+Fee register & 3{,}000 & 300 students $\times$ 10 months; 8 batches; 6 teachers & 4 names spelled two ways (8 rows); a teacher's old phone (5 rows) \\
+Kirana sales & 2{,}009 & 600 bills; 80 customers; 40 items & an old price (3 rows); a name spelled two ways (3 rows) \\
+Hostel mess & 2{,}520 & 60 students $\times$ 14 days $\times$ 3 meals & a warden's name spelled two ways (2 rows) \\
 \bottomrule
 \end{tabularx}
 \end{table}
 
-\begin{figure}[htbp]
-  \centering
-  \newcommand{\shot}[1]{\IfFileExists{screenshots/#1.png}{\fcolorbox{rule}{white}{\includegraphics[width=0.95\linewidth,height=4.4cm,keepaspectratio]{screenshots/#1.png}}}{}}
-  \begin{subfigure}[t]{0.49\linewidth}\centering\shot{design-applied-dark}\caption{Design applied: lossless result}\end{subfigure}\hfill
-  \begin{subfigure}[t]{0.49\linewidth}\centering\shot{dashboard-dark}\caption{Workspace dashboard}\end{subfigure}
-  \par\medskip
-  \begin{subfigure}[t]{0.49\linewidth}\centering\shot{import-dark}\caption{Import: inferred types}\end{subfigure}\hfill
-  \begin{subfigure}[t]{0.49\linewidth}\centering\shot{analyze-issues-dark}\caption{Analyze: keys, dependencies, issues}\end{subfigure}
-  \caption[Screen gallery]{Further screens of QLens.}
-  \label{fig:gallery}
-\end{figure}
+\newcommand{\appshot}[3]{%
+  \begin{figure}[htbp]\centering
+  \IfFileExists{screenshots/#1.png}{\fcolorbox{rule}{white}{\includegraphics[width=0.985\textwidth,keepaspectratio]{screenshots/#1.png}}}{}
+  \caption[#2]{#3}\label{fig:app-#1}\end{figure}}
+\appshot{landing-hero}{Landing page}{Landing page.}
+\appshot{dashboard-dark}{Dashboard}{Dashboard: the user's workspaces and the sample sheets.}
+\appshot{history-crop}{History}{History: every query run, with its status, time and row count.}

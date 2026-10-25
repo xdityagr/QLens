@@ -1,31 +1,19 @@
-% 3NF synthesis as implemented in backend/qlens/analysis/fd_algebra.py (synthesize_3nf).
+% 3NF decomposition (synthesis) algorithm as used by QLens (textbook form, Korth 7e §7.5).
 \begin{algorithm}[htbp]
-\caption[Lossless 3NF synthesis]{Lossless 3NF synthesis used by QLens (Bernstein synthesis with equivalence merging, the
-step-5 redundancy pruning and a key relation)}\label{alg:bernstein}
-\KwIn{attributes $U$ in sheet order; exact, accepted dependencies $F$; candidate keys $K_1,\dots,K_m$ found in the data}
-\KwOut{relations $R_1,\dots,R_n$ (entities) and one fact relation $R_f$; every $R_i$ is in 3NF and $\bowtie_i R_i$ is lossless}
+\caption[3NF decomposition algorithm]{3NF decomposition (synthesis) using a canonical cover, as used by QLens}\label{alg:synthesis}
+\KwIn{relation schema $R$ (the sheet's columns); set $F$ of functional dependencies}
+\KwOut{relation schemas $R_1,\dots,R_n$ in 3NF; the decomposition is lossless and dependency-preserving}
 \BlankLine
-$G \leftarrow \textsc{MinimalCover}(F)$ \tcp*{singleton RHS, left-reduced, no redundant FD}
-partition $G$ into groups $G_X=\{X\rightarrow A \in G\}$, one per left-hand side $X$\;
-\ForEach{pair of groups $G_X, G_Y$}{
-  \If(\tcp*[f]{equivalent determinants}){$X \subseteq Y^{+}_{G}$ \textbf{and} $Y \subseteq X^{+}_{G}$}{merge $G_X$ and $G_Y$ into one group with determinants $\{X,Y\}$\;}
+$F_c \leftarrow$ a canonical cover of $F$\;
+$i \leftarrow 0$\;
+\ForEach{dependency $\alpha \rightarrow \beta$ in $F_c$}{
+  $i \leftarrow i+1$;\quad $R_i \leftarrow \alpha\beta$\tcp*[r]{one schema per dependency}
 }
-$J \leftarrow \{X\rightarrow B \mid X, Y \text{ determinants of one merged group}, B\in Y\}$\;
-\For(\tcp*[f]{Bernstein step 5}){$X\rightarrow A \in G$ \textbf{from last to first}}{
-  \lIf{$A \in X^{+}_{(G\setminus\{X\rightarrow A\})\cup J}$}{remove $X\rightarrow A$ from $G$}
+\If{no $R_j$ contains a candidate key of $R$}{
+  $i \leftarrow i+1$;\quad $R_i \leftarrow$ a candidate key of $R$\tcp*[r]{guarantees a lossless join}
 }
-\ForEach{merged group with determinants $X_1,\dots,X_k$}{
-  $R \leftarrow X_1\cup\dots\cup X_k \cup \{A \mid X_j\rightarrow A \in G\}$; \quad key $\leftarrow$ earliest $X_j$ in sheet order\;
-  emit entity relation $R$ unless it carries no dependency\;
+\Repeat{no more changes}{
+  \lIf{some $R_j \subseteq R_k$ ($j \neq k$)}{delete $R_j$\tcp*[r]{remove redundant schemas}}
 }
-$D \leftarrow$ attributes appearing on the right of some emitted relation's non-key part\;
-\eIf{some emitted $R$ contains $U\setminus D$ \textbf{and} $R^{+}_{G}=U$}{mark $R$ as the fact relation $R_f$\;}{
-  $Z \leftarrow U$\;
-  \For(\tcp*[f]{FD-key by reverse reduction}){$a \in U$ \textbf{in reverse sheet order}}{
-    \lIf{$(Z\setminus\{a\})^{+}_{G} = U$}{$Z \leftarrow Z\setminus\{a\}$}
-  }
-  $R_f \leftarrow Z$; its unique key is $K_1$ if $K_1\subseteq Z$, else none (surrogate key only)\;
-}
-drop every entity relation whose attributes are a subset of another relation's\;
-\Return{entity relations, then $R_f$}\;
+\Return{$R_1,\dots,R_i$}\;
 \end{algorithm}
