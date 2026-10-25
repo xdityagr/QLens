@@ -402,8 +402,8 @@ WHERE NOT EXISTS (SELECT 1 FROM fee_register f
 \subsection{The Data Page and Security}
 \label{sec:design-sandbox}
 
-After a design is applied, the \textbf{Data} page lets the user work with the new tables. It has three
-tabs.
+After a design is applied, the \textbf{Data} page lets the user work with the new tables. It has two
+tabs, Browse and SQL.
 
 \paragraph{Browse.} The user adds, edits and deletes rows through forms, filters rows, follows foreign
 keys to related records and exports a table as CSV. QLens does not check the rules itself: the database's
@@ -450,10 +450,16 @@ CREATE TRIGGER log_row_change AFTER INSERT OR UPDATE OR DELETE ON ws_20.students
 
 \uishot{final-stepthrough-dark}{step}{Step through}{Step through: the query evaluated in relational-algebra order; here the grouping step turns 3{,}000 rows into 8 groups.}
 
-\paragraph{Ask AI.} The user can ask a question in plain English. An optional assistant (Gemini) answers
-by calling read-only tools that run SQL, and shows the SQL it used. On the Design screen the same assistant
-can rename tables and accept or reject dependencies; each such action is checked with SQL first and can
-be undone.
+\paragraph{Ask AI.} Ask AI is its own page (the fifth step), a chat where the user asks questions in plain
+English. An optional assistant (Gemini) answers by running read-only \code{SELECT} queries, each in a
+read-only transaction, and shows the answer, the result table and the SQL it ran, with an ``Open in SQL
+tab'' button (\cref{fig:ui-ask}). In a live test the question ``Which batch collects the most fees?'' made
+it write and run a join of three tables with \code{GROUP BY} and \code{SUM}, and it answered ``JEE
+Morning''. The free tier is rate-limited per minute, so one has to wait about a minute between questions.
+On the Design page the same assistant can rename tables and accept or reject dependencies; each such action
+is checked with SQL first and can be undone.
+
+\uishot{final-ask-dark}{ask}{Ask AI}{Ask AI: a question answered with the SQL it ran}
 
 \InputIfFileExists{figures/sequence-query}{}{}
 
@@ -484,7 +490,7 @@ ROLLBACK;
 \subsection{User Interface}
 \label{sec:design-ui}
 
-The app has five steps: Import, Analyze, Design, Data and History. Each generated table keeps one colour
-on every screen. \Cref{fig:ui-analyze,fig:ui-design,fig:ui-browse,fig:ui-constraint,fig:ui-step} show the
+The app has six steps: Import, Analyze, Design, Data, Ask AI and History. Each generated table keeps one colour
+on every screen. \Cref{fig:ui-analyze,fig:ui-design,fig:ui-browse,fig:ui-constraint,fig:ui-step,fig:ui-ask} show the
 main screens with the fee register; more are in the appendix.
 

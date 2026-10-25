@@ -12,7 +12,7 @@ canonical cover, 3NF decomposition, lossless join, dependency preservation.
 ## Status
 All features built: import, analysis, clean-up, design, apply, Data page (Browse with constraint errors and
 the audit trigger, SQL tab with confirmed DML, Step through, Explain & speed up, Ask AI), History.
-Tests: final run 507 backend passed (1 skipped), 204 frontend passed.
+Tests: final run 511 backend passed (1 skipped), 215 frontend passed.
 
 ## Screenshots
 Body: final-analyze-dark, final-design-proposal-dark, final-data-browse-dark, final-data-fk-dark, final-stepthrough-dark.

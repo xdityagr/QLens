@@ -17,13 +17,13 @@ creates these tables with primary keys, foreign keys and \code{UNIQUE} constrain
 them inside a single transaction, and keeps the result only if joining the new tables back together
 gives exactly the original rows. Afterwards the user can browse and edit the new tables, where the
 database's constraints reject bad changes and a trigger records every change, and can run SQL as a
-restricted database user.
+restricted database user or ask questions in plain English.
 
 QLens stores its own data in a normalized PostgreSQL schema that uses most topics of the course:
 an ER model converted to relational tables, keys and integrity constraints, views, triggers, cursors,
 stored functions, indexes, transactions and GRANT-based access control. On the sample fee register
 (3{,}000 rows) QLens finds every planted error and produces the expected four tables (students,
-batches, teachers and fee records), and rebuilds all 3{,}000 rows exactly. 507 backend and 204 frontend
+batches, teachers and fee records), and rebuilds all 3{,}000 rows exactly. 511 backend and 215 frontend
 automated tests pass.
 
 \medskip

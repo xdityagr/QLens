@@ -65,7 +65,7 @@ NFR-7 & Usability & Results in plain English, light and dark themes. \\
   \item QLens shows keys, dependencies and data problems; the user fixes the problems.
   \item QLens proposes a 3NF design; the user may rename tables or columns.
   \item The user applies the design: the tables are created, filled and checked in one transaction.
-  \item The user browses and edits the new tables and queries them with SQL on the Data page.
+  \item The user browses and edits the new tables and queries them with SQL on the Data page, and asks questions in plain English on the Ask AI page.
 \end{enumerate}
 
 \section{Other Software Engineering Methodologies}
@@ -83,7 +83,7 @@ in SQL (\cref{tab:tests}).
 
 \begin{table}[htbp]
 \centering
-\caption[Test summary]{Automated tests (final run: 507 backend tests passed, 1 skipped; 204 frontend tests passed).}
+\caption[Test summary]{Automated tests (final run: 511 backend tests passed, 1 skipped; 215 frontend tests passed).}
 \label{tab:tests}
 \small
 \begin{tabularx}{\textwidth}{@{}l r X@{}}
@@ -96,8 +96,8 @@ Keys, dependencies, clean-up & 53 & \code{check\_fd}, \code{is\_unique}, fixes a
 Normalization algorithms & 19 & closure, canonical cover, 3NF; 900 random cases checked for 3NF and lossless join \\
 Design and apply & 79 & foreign keys, renames, generated SQL, apply, rollback \\
 SQL tab and query runner & 73 & one statement only, read-only user, time limit, row limit, run history \\
-Data page, writes, step-through, explain, assistant & 205 & constraint errors, audit trigger, privileges, timeouts, relational-algebra steps, index timing, assistant tools \\
-Frontend & 204 & screens' data handling and formatting \\
+Data page, writes, step-through, explain, assistant & 209 & constraint errors, audit trigger, privileges, timeouts, relational-algebra steps, index timing, assistant tools \\
+Frontend & 215 & screens' data handling and formatting \\
 \bottomrule
 \end{tabularx}
 \end{table}

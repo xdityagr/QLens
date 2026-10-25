@@ -10,7 +10,7 @@ faulty rows are found and the expected four tables rebuild all 3{,}000 rows exac
 
 QLens's own data is also a normalized relational design, built from an ER model, with primary and
 foreign keys, \code{CHECK} and \code{UNIQUE} constraints, views, triggers, stored functions, a cursor,
-B-tree indexes, transactions and \code{GRANT}-based security. 507 backend and 204 frontend tests pass.
+B-tree indexes, transactions and \code{GRANT}-based security. 511 backend and 215 frontend tests pass.
 
 \paragraph{What we learnt.}
 \begin{itemize}
@@ -32,7 +32,7 @@ B-tree indexes, transactions and \code{GRANT}-based security. 507 backend and 20
   \item Query results are cut at 1{,}000 rows, but not by size, so very wide rows can still make a large
   result.
   \item The optional assistant sends the question, the table structure and up to 50 result rows to
-  Google Gemini; the free tier allows only about 20 requests a day.
+  Google Gemini; the free tier is rate-limited per minute, so one has to wait about a minute between questions.
   \item The results come from sample data, not a study with real users.
 \end{itemize}
 
