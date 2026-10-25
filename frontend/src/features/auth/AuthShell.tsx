@@ -10,7 +10,7 @@ export function AuthShell({ children }: { children: ReactNode }) {
       <aside className="relative isolate hidden overflow-hidden border-r border-border lg:flex lg:flex-col">
         <NoiseBackdrop lanes={[0, 1]} intensity={0.2} placement="left" />
         <div className="relative flex h-14 items-center px-8">
-          <Wordmark to="/login" />
+          <Wordmark to="/" />
         </div>
         <div className="relative flex flex-1 flex-col justify-center px-8 pb-16 xl:px-14">
           <p className="max-w-[22ch] text-balance text-[34px] font-medium leading-[1.08] tracking-[-0.035em] text-text xl:text-[40px]">
@@ -31,7 +31,7 @@ export function AuthShell({ children }: { children: ReactNode }) {
         <NoiseBackdrop lanes={[0, 1]} intensity={0.16} placement="top" className="lg:hidden" />
         <div className="relative flex h-14 items-center justify-between px-5 sm:px-8">
           <span className="lg:invisible">
-            <Wordmark to="/login" />
+            <Wordmark to="/" />
           </span>
           <ThemeToggle />
         </div>

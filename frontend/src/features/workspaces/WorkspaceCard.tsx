@@ -1,8 +1,10 @@
 import { Trash2 } from "lucide-react"
+import type { CSSProperties } from "react"
 import { Link } from "react-router"
 import { Badge } from "../../components/Badge"
 import { IconButton } from "../../components/Button"
 import { fmtInt, fmtRelative } from "../../lib/format"
+import { laneVar } from "../../lib/lanes"
 import { STAGE_META, nextStep, stepStates } from "../../lib/steps"
 import type { WorkspaceOut } from "../../lib/types"
 
@@ -58,7 +60,10 @@ export function WorkspaceCard({ ws, onDelete }: { ws: WorkspaceOut; onDelete: (w
   const meta = STAGE_META[ws.stage]
   const plural = (n: number, one: string, many: string) => (n === 1 ? one : many)
   return (
-    <div className="group relative rounded-card border border-border bg-surface transition-colors duration-150 hover:border-border-strong focus-within:border-border-strong">
+    <div
+      className="ld-card group relative rounded-card border border-border bg-surface hover:border-border-strong focus-within:border-border-strong"
+      style={{ "--glow": meta.lane === null ? "var(--muted)" : laneVar(meta.lane) } as CSSProperties}
+    >
       <Link
         to={`/w/${ws.id}/${nextStep(ws.stage)}`}
         className="flex h-full flex-col gap-5 rounded-card p-5 outline-offset-[-1px]"
@@ -78,12 +83,14 @@ export function WorkspaceCard({ ws, onDelete }: { ws: WorkspaceOut; onDelete: (w
           ) : (
             <>
               <Stat value={ws.row_count} label={plural(ws.row_count, "row", "rows")} />
-              {ws.table_count !== null ? (
-                <Stat value={ws.table_count} label={plural(ws.table_count, "table", "tables")} />
-              ) : (
-                <Stat value={ws.column_count ?? 0} label={plural(ws.column_count ?? 0, "column", "columns")} />
+              <Stat value={ws.column_count ?? 0} label={plural(ws.column_count ?? 0, "column", "columns")} />
+              {/* tables exist only once a design is applied; before that the count is 0 and means nothing */}
+              {ws.stage === "applied" && (
+                <>
+                  <Stat value={ws.table_count ?? 0} label={plural(ws.table_count ?? 0, "table", "tables")} />
+                  <Stat value={ws.query_count} label={plural(ws.query_count, "query", "queries")} />
+                </>
               )}
-              {ws.stage === "applied" && <Stat value={ws.query_count} label={plural(ws.query_count, "query", "queries")} />}
             </>
           )}
         </div>

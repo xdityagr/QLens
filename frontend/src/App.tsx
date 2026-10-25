@@ -6,6 +6,7 @@ import { SignupPage } from "./features/auth/SignupPage"
 import { AnalyzePage } from "./features/analyze/AnalyzePage"
 import { useMe } from "./features/auth/useAuth"
 import { ImportPage } from "./features/import/ImportPage"
+import { LandingPage } from "./features/landing/LandingPage"
 import { DashboardPage } from "./features/workspaces/DashboardPage"
 import { StepPlaceholder } from "./features/workspaces/StepPlaceholder"
 import { WorkspaceLayout } from "./features/workspaces/WorkspaceLayout"
@@ -30,6 +31,13 @@ function RequireAuth() {
   return <Outlet />
 }
 
+// Signed-out visitors get the landing page at "/", signed-in users their dashboard.
+function Home() {
+  const { data: me, isPending } = useMe()
+  if (isPending) return <FullPageSpinner />
+  return me ? <DashboardPage /> : <LandingPage />
+}
+
 export default function App() {
   return (
     <QueryClientProvider client={queryClient}>
@@ -37,8 +45,8 @@ export default function App() {
         <Routes>
           <Route path="/login" element={<LoginPage />} />
           <Route path="/signup" element={<SignupPage />} />
+          <Route path="/" element={<Home />} />
           <Route element={<RequireAuth />}>
-            <Route path="/" element={<DashboardPage />} />
             <Route path="/w/:id" element={<WorkspaceLayout />}>
               <Route index element={<Navigate to="import" replace />} />
               <Route path="import" element={<ImportPage />} />

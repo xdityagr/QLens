@@ -1,0 +1,223 @@
+/* Landing page motion. Transform/opacity/stroke-dashoffset only; everything is static under reduced motion. */
+
+.ld-display {
+  font-family: var(--font-ui);
+  font-weight: 500;
+  letter-spacing: -0.055em;
+  line-height: 0.95;
+}
+
+/* Moving grain gradient: three soft lane blobs drifting on long, out-of-phase loops. */
+.ld-blob {
+  position: absolute;
+  border-radius: 9999px;
+  filter: blur(60px);
+  will-change: transform;
+}
+.ld-blob-a {
+  animation: ld-orbit-a 32s ease-in-out infinite alternate;
+}
+.ld-blob-b {
+  animation: ld-orbit-b 41s ease-in-out infinite alternate;
+}
+.ld-blob-c {
+  animation: ld-orbit-c 37s ease-in-out infinite alternate;
+}
+@keyframes ld-orbit-a {
+  from {
+    transform: translate3d(-6%, -4%, 0) scale(1);
+  }
+  to {
+    transform: translate3d(10%, 8%, 0) scale(1.15);
+  }
+}
+@keyframes ld-orbit-b {
+  from {
+    transform: translate3d(8%, 6%, 0) scale(1.1);
+  }
+  to {
+    transform: translate3d(-10%, -6%, 0) scale(0.95);
+  }
+}
+@keyframes ld-orbit-c {
+  from {
+    transform: translate3d(0, 10%, 0) scale(0.9);
+  }
+  to {
+    transform: translate3d(-8%, -8%, 0) scale(1.1);
+  }
+}
+
+/* Light parallax: --ld-scroll is the hero's scroll progress (0..1), set from a rAF scroll listener. */
+.ld-parallax-slow {
+  transform: translate3d(0, calc(var(--ld-scroll, 0) * 60px), 0);
+}
+.ld-parallax-fade {
+  opacity: calc(1 - var(--ld-scroll, 0) * 0.9);
+  transform: translate3d(0, calc(var(--ld-scroll, 0) * -40px), 0);
+}
+
+/* Scroll reveal: content settles in once, when its section reaches the viewport. */
+.ld-reveal {
+  opacity: 0;
+  transform: translate3d(0, 18px, 0);
+  transition:
+    opacity 700ms cubic-bezier(0.2, 0.7, 0.2, 1),
+    transform 700ms cubic-bezier(0.2, 0.7, 0.2, 1);
+  transition-delay: var(--d, 0ms);
+}
+[data-in="true"] .ld-reveal,
+.ld-reveal[data-in="true"] {
+  opacity: 1;
+  transform: none;
+}
+
+/* SVG paths with pathLength=1 that draw in when their section is in view. */
+.ld-draw {
+  stroke-dasharray: 1 1;
+  stroke-dashoffset: 1;
+  transition: stroke-dashoffset 900ms cubic-bezier(0.6, 0, 0.2, 1);
+  transition-delay: var(--d, 0ms);
+}
+[data-in="true"] .ld-draw {
+  stroke-dashoffset: 0;
+}
+
+.ld-pop {
+  opacity: 0;
+  transform: scale(0.6);
+  transform-box: fill-box;
+  transform-origin: center;
+  transition:
+    opacity 360ms ease,
+    transform 480ms cubic-bezier(0.2, 0.9, 0.3, 1.25);
+  transition-delay: var(--d, 0ms);
+}
+[data-in="true"] .ld-pop {
+  opacity: 1;
+  transform: none;
+}
+
+.ld-fade {
+  opacity: 0;
+  transition: opacity 500ms ease;
+  transition-delay: var(--d, 0ms);
+}
+[data-in="true"] .ld-fade {
+  opacity: 1;
+}
+
+/* Things that start somewhere else and snap to place: --fx/--fy/--fr give the start. */
+.ld-snap {
+  transform: translate3d(var(--fx, 0), var(--fy, 0), 0) rotate(var(--fr, 0deg));
+  transform-box: fill-box;
+  transform-origin: center;
+  opacity: 0.35;
+  transition:
+    transform 900ms cubic-bezier(0.65, 0, 0.2, 1),
+    opacity 600ms ease;
+  transition-delay: var(--d, 0ms);
+}
+[data-in="true"] .ld-snap {
+  transform: none;
+  opacity: 1;
+}
+
+/* Two look-alike values sliding into one. */
+.ld-merge-a,
+.ld-merge-b {
+  transition:
+    transform 700ms cubic-bezier(0.65, 0, 0.2, 1),
+    opacity 400ms ease;
+  transition-delay: var(--d, 0ms);
+}
+[data-in="true"] .ld-merge-a {
+  transform: translate3d(0, 13px, 0);
+}
+[data-in="true"] .ld-merge-b {
+  transform: translate3d(0, -13px, 0);
+  opacity: 0;
+}
+
+.ld-caret {
+  display: inline-block;
+  width: 2px;
+  height: 1.1em;
+  margin-left: 1px;
+  vertical-align: -0.18em;
+  background: var(--accent);
+  animation: ld-blink 1s steps(1) infinite;
+}
+@keyframes ld-blink {
+  50% {
+    opacity: 0;
+  }
+}
+
+.ld-check {
+  transform: scale(0.4);
+  opacity: 0;
+  transition:
+    transform 420ms cubic-bezier(0.2, 0.9, 0.3, 1.4),
+    opacity 200ms ease;
+}
+.ld-check[data-on="true"] {
+  transform: none;
+  opacity: 1;
+}
+
+/* Dashboard hero graph drifts slowly. */
+.ld-drift {
+  animation: ld-drift 18s ease-in-out infinite alternate;
+}
+@keyframes ld-drift {
+  from {
+    transform: translate3d(0, -10px, 0);
+  }
+  to {
+    transform: translate3d(-24px, 14px, 0);
+  }
+}
+
+/* Workspace cards lift and glow in their stage lane on hover. */
+.ld-card {
+  transition:
+    transform 180ms cubic-bezier(0.2, 0.7, 0.2, 1),
+    box-shadow 180ms ease,
+    border-color 150ms ease;
+}
+.ld-card:hover,
+.ld-card:focus-within {
+  transform: translate3d(0, -2px, 0);
+  box-shadow:
+    0 0 0 1px color-mix(in oklab, var(--glow, var(--accent)) 35%, transparent),
+    0 12px 32px -14px color-mix(in oklab, var(--glow, var(--accent)) 55%, transparent);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ld-blob,
+  .ld-drift,
+  .ld-caret {
+    animation: none !important;
+  }
+  .ld-parallax-slow,
+  .ld-parallax-fade {
+    transform: none !important;
+    opacity: 1 !important;
+  }
+  .ld-reveal,
+  .ld-pop,
+  .ld-fade,
+  .ld-snap,
+  .ld-check {
+    opacity: 1 !important;
+    transform: none !important;
+  }
+  .ld-draw {
+    stroke-dashoffset: 0 !important;
+  }
+  .ld-card:hover,
+  .ld-card:focus-within {
+    transform: none;
+  }
+}
