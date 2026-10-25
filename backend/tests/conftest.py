@@ -72,3 +72,10 @@ def client(test_url, conn, monkeypatch):
     with TestClient(app) as tc:
         yield tc
     app.dependency_overrides.clear()
+
+
+@pytest.fixture
+def second_client(client):
+    # Independent cookie jar (a different user). Not entered with `with`: the lifespan already ran for
+    # `client`, and the get_conn override it installs applies to every TestClient of the app.
+    return TestClient(app)

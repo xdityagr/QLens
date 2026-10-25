@@ -4,7 +4,9 @@ import psycopg
 from fastapi import APIRouter, Depends, FastAPI
 
 from qlens import db
+from qlens.auth.routes import router as auth_router
 from qlens.errors import install_error_handlers
+from qlens.workspaces.routes import router as workspaces_router
 
 
 @asynccontextmanager
@@ -28,4 +30,6 @@ def health(conn: psycopg.Connection = Depends(db.get_conn)) -> dict:
     return {"ok": True, "db": True}
 
 
+router.include_router(auth_router)
+router.include_router(workspaces_router)
 app.include_router(router)
