@@ -1,4 +1,3 @@
-import psycopg
 from fastapi import APIRouter, Depends, Request, Response
 
 from qlens import db
@@ -19,21 +18,21 @@ def _set_cookie(response: Response, token: str) -> None:
 
 
 @router.post("/signup", status_code=201)
-def signup(data: SignupIn, response: Response, conn: psycopg.Connection = Depends(db.get_conn)) -> UserOut:
+def signup(data: SignupIn, response: Response, conn: db.Conn) -> UserOut:
     user = service.signup(conn, data)
     _set_cookie(response, service.create_session(conn, user.id))
     return user
 
 
 @router.post("/login")
-def login(data: LoginIn, response: Response, conn: psycopg.Connection = Depends(db.get_conn)) -> UserOut:
+def login(data: LoginIn, response: Response, conn: db.Conn) -> UserOut:
     user = service.authenticate(conn, data.email, data.password)
     _set_cookie(response, service.create_session(conn, user.id))
     return user
 
 
 @router.post("/logout", status_code=204)
-def logout(request: Request, conn: psycopg.Connection = Depends(db.get_conn)) -> Response:
+def logout(request: Request, conn: db.Conn) -> Response:
     token = request.cookies.get(service.SESSION_COOKIE)
     if token:
         service.delete_session(conn, token)

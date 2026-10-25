@@ -1,9 +1,10 @@
 import hashlib
 import hmac
 from collections.abc import Iterator
-from typing import Literal
+from typing import Annotated, Literal
 
 import psycopg
+from fastapi import Depends
 from psycopg import sql
 from psycopg.rows import dict_row
 from psycopg_pool import ConnectionPool
@@ -48,6 +49,12 @@ def get_conn() -> Iterator[psycopg.Connection]:
             raise
         else:
             conn.commit()
+
+
+# scope="function": the dependency exits (and commits) before the response is sent. With FastAPI's
+# default request scope the commit would run after the client already received a 2xx, so a commit
+# failure would be invisible and an immediate follow-up request could miss the write.
+Conn = Annotated[psycopg.Connection, Depends(get_conn, scope="function")]
 
 
 # ---- per-workspace sandbox role and schemas -------------------------------------------------------

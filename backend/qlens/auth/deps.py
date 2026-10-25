@@ -1,4 +1,3 @@
-import psycopg
 from fastapi import Depends, Request
 
 from qlens import db
@@ -8,7 +7,7 @@ from qlens.errors import ApiError
 from qlens.workspaces.service import WorkspaceRow, get_workspace_row
 
 
-def current_user(request: Request, conn: psycopg.Connection = Depends(db.get_conn)) -> UserOut:
+def current_user(request: Request, conn: db.Conn) -> UserOut:
     token = request.cookies.get(service.SESSION_COOKIE)
     user = service.user_for_token(conn, token) if token else None
     if user is None:
@@ -18,8 +17,8 @@ def current_user(request: Request, conn: psycopg.Connection = Depends(db.get_con
 
 def owned_workspace(
     workspace_id: int,
+    conn: db.Conn,
     user: UserOut = Depends(current_user),
-    conn: psycopg.Connection = Depends(db.get_conn),
 ) -> WorkspaceRow:
     # Someone else's workspace is reported as missing so ids cannot be probed.
     row = get_workspace_row(conn, workspace_id, user.id)

@@ -1,7 +1,6 @@
 from contextlib import asynccontextmanager
 
-import psycopg
-from fastapi import APIRouter, Depends, FastAPI
+from fastapi import APIRouter, FastAPI
 
 from qlens import db
 from qlens.auth.routes import router as auth_router
@@ -25,7 +24,7 @@ router = APIRouter(prefix="/api")
 
 
 @router.get("/health")
-def health(conn: psycopg.Connection = Depends(db.get_conn)) -> dict:
+def health(conn: db.Conn) -> dict:
     conn.execute("SELECT 1")
     return {"ok": True, "db": True}
 
