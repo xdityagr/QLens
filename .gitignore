@@ -10,3 +10,6 @@ __pycache__/
 *.pyc
 .pytest_cache/
 backend/.pgdata/
+# Other students' reports and the university logo kept at the root for reference; never committed.
+/*.pdf
+/uni_logo.jpg

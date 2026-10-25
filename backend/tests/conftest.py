@@ -35,6 +35,9 @@ def _migrated(test_url):
 
 def _wipe(c: psycopg.Connection) -> None:
     # Workspace schemas/roles are created by tests; they must not leak between tests.
+    # Guard: a misconfigured TEST_DATABASE_URL must never truncate the dev database.
+    dbname = c.execute("SELECT current_database() AS d").fetchone()["d"]
+    assert dbname == "qlens_test", f"refusing to wipe database {dbname!r}"
     schemas = [r["nspname"] for r in c.execute(
         r"SELECT nspname FROM pg_namespace WHERE nspname LIKE 'ws\_%'")]
     for s in schemas:

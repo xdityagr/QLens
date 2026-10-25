@@ -18,8 +18,6 @@ class Settings(BaseSettings):
     secret_key: str
     # Roles are cluster-wide, so tests use a different prefix ("qlenstest_ws_") from dev.
     role_prefix: str = "qlens_ws_"
-    anthropic_api_key: str | None = None
-    claude_model: str = "claude-sonnet-5-5"
     # The assistant is off when no key is set; the UI says so plainly.
     gemini_api_key: str | None = None
     gemini_model: str = "gemini-3.5-flash"   # GA, function calling; override with GEMINI_MODEL
