@@ -68,6 +68,8 @@ def conn(test_url):
 def client(test_url, conn, monkeypatch):
     settings = get_settings()
     monkeypatch.setattr(settings, "role_prefix", TEST_ROLE_PREFIX)
+    # The sandbox connects to settings.pg_dbname (derived from database_url): point it at the test DB.
+    monkeypatch.setattr(settings, "database_url", test_url)
 
     def override():
         with psycopg.connect(test_url, row_factory=dict_row) as c:
@@ -95,13 +97,14 @@ class WsHandle:
 
 
 @pytest.fixture
-def make_workspace(conn, monkeypatch):
+def make_workspace(conn, monkeypatch, test_url):
     """Factory: every call makes a fresh user and a fresh workspace through the service layer.
 
     Committed, so other connections (the sandbox role, a TestClient) can see them; the `conn` fixture
     wipes every workspace schema, role and metadata row at the start of the next test.
     """
     monkeypatch.setattr(get_settings(), "role_prefix", TEST_ROLE_PREFIX)
+    monkeypatch.setattr(get_settings(), "database_url", test_url)  # sandbox runs connect to the test DB
     made = itertools.count(1)
 
     def make() -> int:
@@ -173,3 +176,17 @@ def applied_fee(conn, fee_ws_clean) -> WsHandle:
     apply_proposal(conn, fee_ws_clean.id, build(conn, fee_ws_clean.dataset_id).id)
     conn.commit()
     return fee_ws_clean
+
+
+@pytest.fixture
+def other_applied_ws(conn, make_workspace) -> WsHandle:
+    """A second user's applied fee_register workspace, for cross-workspace isolation tests."""
+    from qlens.analysis.cleanup import accept_all
+    from qlens.design.apply import apply_proposal
+    from qlens.design.proposal import build
+
+    ws = _with_sample(conn, make_workspace(), "fee_register")
+    accept_all(conn, ws.dataset_id)
+    apply_proposal(conn, ws.id, build(conn, ws.dataset_id).id)
+    conn.commit()
+    return ws
