@@ -153,11 +153,9 @@ def test_kirana_core_fds(conn, kirana_ws):
 
 def test_hostel_core_fds(conn, hostel_ws):
     a = analyze(conn, hostel_ws.dataset_id)
-    # room is a plain integer column named "room", so it is treated as a measure and cannot be a
-    # determinant; student -> room / hostel_block carry the same information.
     assert core_fds(a) == {
+        (("room",), "hostel_block", True, 0),
         (("student",), "room", True, 0),
-        (("student",), "hostel_block", True, 0),
         (("hostel_block",), "warden", False, 2),           # 'Mrs Rao'
         (("warden",), "hostel_block", True, 0),
         (("menu_item",), "meal", True, 0),

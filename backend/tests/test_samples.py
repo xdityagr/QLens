@@ -144,6 +144,8 @@ def test_hostel_structure_and_plants():
     assert {r["Attended"] for r in rows} == {"Yes", "No"}
     assert len({(r["Student"], r["Date"], r["Meal"]) for r in rows}) == 2520
     assert len({(r["Room"], r["Hostel Block"]) for r in rows}) == len({r["Room"] for r in rows})   # room -> block
+    assert all(r["Room"] == f"{r['Hostel Block']}-{r['Room'].split('-')[1]}" and r["Room"].split("-")[1].isdigit()
+               for r in rows)
     assert len({(r["Date"], r["Meal"], r["Menu Item"]) for r in rows}) == 14 * 3
     assert sum(r["Warden"] == "Mrs Rao" for r in rows) == 2
     wardens = defaultdict(set)

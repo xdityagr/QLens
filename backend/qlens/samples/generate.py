@@ -31,7 +31,7 @@ kirana_sales.csv  (600 bills, 1-6 distinct items each)
 
 hostel_mess.csv  (60 students x 14 days x 3 meals = 2520 rows)
   * Date is written yyyy-mm-dd; Attended is Yes or No.
-  * room -> block and block -> warden are exact apart from the plant; one menu item per (date, meal).
+  * Room is text such as "B-204" (block letter + number); room -> block and block -> warden are exact apart from the plant; one menu item per (date, meal).
   * Planted: Block B's warden 'Mrs. Rao' is written 'Mrs Rao' in exactly 2 rows.
 """
 
@@ -214,7 +214,7 @@ def _hostel_mess(rng: random.Random):
     header = ["Room", "Student", "Hostel Block", "Warden", "Date", "Meal", "Menu Item",
               "Attended"]
     names = rng.sample([f"{f} {l}" for f in _HOSTEL_FIRST for l in _HOSTEL_LAST], 60)
-    rooms = [(room, block, warden) for block, warden, nums in _BLOCKS for room in nums]   # 30 rooms
+    rooms = [(room, block, warden) for block, warden, nums in _BLOCKS for room in (f"{block}-{n}" for n in nums)]   # 30 rooms
     # two students per room
     students = [(names[2 * i + k], *rooms[i]) for i in range(30) for k in range(2)]
     start = date(2026, 8, 3)

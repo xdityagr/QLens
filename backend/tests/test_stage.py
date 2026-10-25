@@ -36,7 +36,7 @@ def test_kirana_and_hostel_types(conn, workspace):
         src_ident(workspace))).fetchone()["n"]
     assert n == 0                                                      # every dd/mm/yyyy parsed
     ds = import_dataset(conn, workspace, *generate("hostel_mess"), source="sample")
-    assert types_of(ds) == {"room": "integer", "student": "text", "hostel_block": "text", "warden": "text",
+    assert types_of(ds) == {"room": "text", "student": "text", "hostel_block": "text", "warden": "text",
                             "date": "date", "meal": "text", "menu_item": "text",
                             "attended": "boolean"}
 
