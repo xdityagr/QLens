@@ -124,7 +124,22 @@ const ERROR_COPY: Record<QueryErrorCode, { title: string; hint?: string; icon: R
   syntax_error: { title: "Syntax error", icon: <AlertTriangle size={16} /> },
   not_a_select: {
     title: "Not a plain SELECT",
-    hint: "The query screen is read-only: it reads your tables but never changes them.",
+    hint: "A SELECT runs read-only. To change rows, write a single INSERT, UPDATE or DELETE; it runs after you confirm it.",
+    icon: <Ban size={16} />,
+  },
+  not_a_write: {
+    title: "Can't run this here",
+    hint: "Only SELECT, INSERT, UPDATE and DELETE run here. Statements that change the tables themselves (CREATE, ALTER, DROP, TRUNCATE) belong to Design.",
+    icon: <Ban size={16} />,
+  },
+  one_write_only: {
+    title: "One change at a time",
+    hint: "A WITH can feed an INSERT, UPDATE or DELETE with rows it reads, but it cannot change data itself.",
+    icon: <Ban size={16} />,
+  },
+  write_target_not_allowed: {
+    title: "This table can't be changed here",
+    hint: "Only the tables your design created can be changed. The imported sheet (_raw, _staging) stays as it was imported.",
     icon: <Ban size={16} />,
   },
   multiple_statements: {

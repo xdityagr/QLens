@@ -8,7 +8,7 @@ import { fmtInt, fmtMs, fmtRelative } from "../../lib/format"
 import { laneAlpha, laneVar } from "../../lib/lanes"
 import type { RunOut, RunSource, RunStatus, SlowQuery } from "../query/api"
 import { useHistory, useSavedQueries, useSlowQueries } from "../query/queries"
-import type { OpenInEditor } from "../query/QueryPage"
+import type { OpenInEditor } from "../data/SqlTab"
 import "../query/query.css"
 import { useWorkspaceContext } from "../workspaces/context"
 import { StepHeader } from "../workspaces/StepHeader"
@@ -75,7 +75,7 @@ function HistoryBody({ wsId }: { wsId: number }) {
   const titles = useMemo(() => new Map((savedQ.data ?? []).map((q) => [q.id, q.title])), [savedQ.data])
 
   const open = (sql: string, savedQueryId?: number | null) =>
-    navigate(`/w/${wsId}/query`, {
+    navigate(`/w/${wsId}/data?tab=sql`, {
       state: {
         open: {
           sql,
@@ -91,9 +91,9 @@ function HistoryBody({ wsId }: { wsId: number }) {
       <StepHeader
         step="history"
         actions={
-          <Link to={`/w/${wsId}/query`} className={buttonClass("secondary", "sm")}>
+          <Link to={`/w/${wsId}/data?tab=sql`} className={buttonClass("secondary", "sm")}>
             <TerminalSquare size={14} />
-            Open Query
+            Open SQL
           </Link>
         }
       />
@@ -111,7 +111,7 @@ function HistoryBody({ wsId }: { wsId: number }) {
           icon={<TerminalSquare size={18} strokeWidth={1.5} />}
           title="No queries run yet"
           action={
-            <Link to={`/w/${wsId}/query`} className={buttonClass("primary")}>
+            <Link to={`/w/${wsId}/data?tab=sql`} className={buttonClass("primary")}>
               Write a query
             </Link>
           }

@@ -1,6 +1,6 @@
 import type { WorkspaceStage } from "./types"
 
-export type StepKey = "import" | "analyze" | "design" | "data" | "query" | "perf" | "history"
+export type StepKey = "import" | "analyze" | "design" | "data" | "history"
 // done = finished, current = the next thing to do, open = usable but not the focus,
 // locked = needs an earlier step first.
 export type StepState = "done" | "current" | "open" | "locked"
@@ -17,9 +17,7 @@ export const STEPS: StepDef[] = [
   { key: "import", label: "Import", blurb: "Upload a CSV or Excel sheet, preview it and check the inferred column types.", needs: "" },
   { key: "analyze", label: "Analyze", blurb: "Find which columns determine which, candidate keys and messy values.", needs: "Import a sheet first." },
   { key: "design", label: "Design", blurb: "Split the sheet into 3NF tables, rename them, and apply with a lossless check.", needs: "Run the analysis first." },
-  { key: "data", label: "Data", blurb: "Browse your tables and add, edit or delete rows. The database's own constraints decide what is allowed, and a trigger logs every change.", needs: "Apply a design first." },
-  { key: "query", label: "Query", blurb: "Write SQL against your tables, see results and step through how a query runs.", needs: "Apply a design first." },
-  { key: "perf", label: "Performance", blurb: "Read query plans, try indexes on a copy of your data and compare timings.", needs: "Apply a design first." },
+  { key: "data", label: "Data", blurb: "Use your new database: browse and edit rows, run SQL (with plans and a step-through), or ask about the data in plain English.", needs: "Apply a design first." },
   { key: "history", label: "History", blurb: "Every query you ran, the ones you saved, and which ones were slow.", needs: "Apply a design first." },
 ]
 
@@ -31,8 +29,8 @@ export function stepStates(stage: WorkspaceStage): (StepDef & { state: StepState
     let state: StepState
     if (i < 3) state = i < reached ? "done" : i === reached ? "current" : "locked"
     else if (reached < 3) state = "locked"
-    // after the apply, querying is the next thing to do; browsing the data is open alongside it
-    else state = step.key === "query" ? "current" : "open"
+    // after the apply, using the data is the next thing to do; History is open alongside it
+    else state = step.key === "data" ? "current" : "open"
     return { ...step, state }
   })
 }

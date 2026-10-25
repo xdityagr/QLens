@@ -1,5 +1,7 @@
-import { keepPreviousData, useMutation, useQuery, type QueryClient } from "@tanstack/react-query"
+import { keepPreviousData, useMutation, useQuery, useQueryClient, type QueryClient } from "@tanstack/react-query"
 import { schemaKey } from "../../lib/schema"
+import { refreshWorkspace } from "../import/queries"
+import { historyKey, slowKey } from "../query/queries"
 import { dataApi, type RowsParams, type WriteValue } from "./api"
 
 export const dataKey = (wsId: number) => ["data", wsId] as const
@@ -40,10 +42,29 @@ export function useDataChanges(wsId: number, enabled = true) {
   return useQuery({ queryKey: changesKey(wsId), enabled, queryFn: () => dataApi.changes(wsId) })
 }
 
-/** After any write: the table's pages, the audit log and the row counts in the table list are stale. */
+/**
+ * After any write (Browse, the SQL tab, or a re-apply): the table's pages, the audit log and the row counts in
+ * the table list are stale, and so are plans and step-throughs, which ran on the old rows.
+ */
 export function invalidateData(qc: QueryClient, wsId: number) {
   qc.invalidateQueries({ queryKey: dataKey(wsId) })
   qc.invalidateQueries({ queryKey: schemaKey(wsId) })
+  qc.invalidateQueries({ queryKey: ["explain"] })
+  qc.invalidateQueries({ queryKey: ["stepthrough", wsId] })
+}
+
+/** A typed INSERT/UPDATE/DELETE. Success or refusal, it is recorded in History. */
+export function useSqlWrite(wsId: number) {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (sql: string) => dataApi.sqlWrite(wsId, sql),
+    onSuccess: () => invalidateData(qc, wsId),
+    onSettled: () => {
+      qc.invalidateQueries({ queryKey: historyKey(wsId) })
+      qc.invalidateQueries({ queryKey: slowKey(wsId) })
+      refreshWorkspace(qc, wsId)
+    },
+  })
 }
 
 type Write =

@@ -32,6 +32,10 @@ export type QueryErrorCode =
   | "syntax_error"
   | "invalid_query"
   | "query_too_complex"
+  // the SQL tab's write path (POST /query/write)
+  | "not_a_write"
+  | "one_write_only"
+  | "write_target_not_allowed"
 
 /** `detail` of a 400 from POST /query; validation errors carry only a position */
 export interface QueryErrorDetail {

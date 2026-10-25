@@ -150,3 +150,57 @@
 .dc-pop {
   animation: dc-pop 140ms ease-out both;
 }
+
+/* ---- SQL tab --------------------------------------------------------------------------------------- */
+
+/* the write confirm: drops in under the editor, its stripe draws down (like the constraint card) */
+@keyframes dw-confirm-in {
+  from {
+    opacity: 0;
+    transform: translateY(-6px) scale(0.99);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+.dw-confirm {
+  animation: dw-confirm-in 220ms cubic-bezier(0.2, 0.7, 0.2, 1) both;
+}
+@keyframes dw-stripe {
+  from {
+    transform: scaleY(0);
+  }
+  to {
+    transform: scaleY(1);
+  }
+}
+.dw-stripe {
+  transform-origin: top;
+  animation: dw-stripe 320ms 80ms cubic-bezier(0.2, 0.7, 0.2, 1) both;
+}
+
+/* the statement-kind pill swaps with a short fade when the first keyword changes */
+@keyframes dw-kind-in {
+  from {
+    opacity: 0;
+    transform: translateY(2px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+.dw-kind {
+  animation: dw-kind-in 160ms ease-out both;
+}
+
+/* Explain / Step-through panels open below the results */
+.dw-panel {
+  animation: dw-confirm-in 260ms cubic-bezier(0.2, 0.7, 0.2, 1) both;
+}
+
+/* a tab panel coming into view */
+.dw-tab-in {
+  animation: dw-kind-in 200ms ease-out both;
+}

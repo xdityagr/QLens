@@ -91,6 +91,18 @@ export interface RowsParams {
   filters: string[]
 }
 
+/** POST /query/write: one INSERT, UPDATE or DELETE from the SQL tab, committed (backend/qlens/query/routes.py). */
+export interface SqlWriteOut {
+  run_id: number
+  statement: ChangeOp
+  table: string
+  /** rows affected */
+  row_count: number
+  /** what RETURNING gave, at most 50 rows; null without RETURNING */
+  returning: { columns: { name: string; type: string }[]; rows: Cell[][]; truncated: boolean } | null
+  duration_ms: number
+}
+
 /** Rows of another table that point at one row (GET /data/{table}/{id}/related). */
 export interface RelatedOut {
   table: string
@@ -135,5 +147,7 @@ export const dataApi = {
     api<Row>(`${base(wsId)}/data/${enc(table)}/${id}`, { method: "PATCH", json: { values } }),
   remove: (wsId: number, table: string, id: number) =>
     api<void>(`${base(wsId)}/data/${enc(table)}/${id}`, { method: "DELETE" }),
+  sqlWrite: (wsId: number, sql: string) =>
+    api<SqlWriteOut>(`${base(wsId)}/query/write`, { method: "POST", json: { sql } }),
   changes: (wsId: number, limit = 50) => api<ChangesOut>(`${base(wsId)}/data-changes?limit=${limit}`),
 }

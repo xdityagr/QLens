@@ -3,7 +3,6 @@ import { ChevronLeft, ChevronRight, Download, Plus, Search } from "lucide-react"
 import { useEffect, useRef, useState } from "react"
 import { useSearchParams } from "react-router"
 import { Button, IconButton } from "../../components/Button"
-import { buttonClass } from "../../components/buttonClass"
 import { EmptyState } from "../../components/EmptyState"
 import { inputClass } from "../../components/Field"
 import { Spinner } from "../../components/Spinner"
@@ -175,17 +174,13 @@ export function TableView({ wsId, table, laneOf }: { wsId: number; table: string
         </div>
         {rows.isFetching && <Spinner size={14} className="text-muted" />}
         <div className="ml-auto flex items-center gap-2">
-          <a
-            href={dataApi.exportUrl(wsId, table, view)}
-            download={`${table}.csv`}
-            className={buttonClass("secondary", "sm")}
+          <ExportButton
+            url={dataApi.exportUrl(wsId, table, view)}
+            table={table}
             title={
               narrowed ? "Every row that matches the search and filters, in this order" : "Every row, in this order"
             }
-          >
-            <Download size={14} />
-            Export CSV
-          </a>
+          />
           <Button
             variant="primary"
             size="sm"
@@ -319,5 +314,62 @@ export function TableView({ wsId, table, laneOf }: { wsId: number; table: string
         />
       )}
     </section>
+  )
+}
+
+// The import limit; the server stops an export there and says so in a header.
+const EXPORT_CAP = 100_000
+
+/**
+ * Downloads the CSV through fetch (the session cookie goes with it) so the response header can say whether the
+ * file was cut at EXPORT_CAP rows; then it says so beside the button.
+ */
+function ExportButton({ url, table, title }: { url: string; table: string; title: string }) {
+  const [busy, setBusy] = useState(false)
+  const [note, setNote] = useState<string | null>(null)
+  async function download() {
+    setBusy(true)
+    setNote(null)
+    try {
+      const res = await fetch(url, { credentials: "include" })
+      if (!res.ok) throw new Error(`The export failed (HTTP ${res.status}).`)
+      const blob = await res.blob()
+      const href = URL.createObjectURL(blob)
+      const a = document.createElement("a")
+      a.href = href
+      a.download = `${table}.csv`
+      document.body.append(a)
+      a.click()
+      a.remove()
+      setTimeout(() => URL.revokeObjectURL(href), 1000)
+      if (res.headers.get("X-QLens-Truncated") === "true")
+        setNote(`The file holds the first ${fmtInt(EXPORT_CAP)} rows only; filter the table to export the rest.`)
+    } catch (e) {
+      setNote(e instanceof Error ? e.message : "The export failed.")
+    } finally {
+      setBusy(false)
+    }
+  }
+  return (
+    <span className="relative">
+      <Button size="sm" loading={busy} icon={<Download size={14} />} onClick={download} title={title}>
+        Export CSV
+      </Button>
+      {note && (
+        <span
+          role="status"
+          className="absolute right-0 top-full z-10 mt-1.5 w-[280px] rounded-control border border-border-strong bg-raised px-3 py-2 text-[12.5px] leading-snug text-text shadow-[var(--shadow-pop)]"
+        >
+          {note}{" "}
+          <button
+            type="button"
+            className="text-muted underline underline-offset-2 hover:text-text"
+            onClick={() => setNote(null)}
+          >
+            Dismiss
+          </button>
+        </span>
+      )}
+    </span>
   )
 }

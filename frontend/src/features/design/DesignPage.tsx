@@ -3,6 +3,7 @@ import { lazy, Suspense, useCallback, useEffect, useMemo, useState, type ReactNo
 import { Link } from "react-router"
 import { Badge } from "../../components/Badge"
 import { Button } from "../../components/Button"
+import { Dialog } from "../../components/Dialog"
 import { buttonClass } from "../../components/buttonClass"
 import { EmptyState } from "../../components/EmptyState"
 import { Spinner } from "../../components/Spinner"
@@ -10,6 +11,8 @@ import { Tabs } from "../../components/Tabs"
 import { ApiError } from "../../lib/api"
 import { STEPS } from "../../lib/steps"
 import type { ProposalOut } from "../../lib/types"
+import { fmtInt } from "../../lib/format"
+import { useDataChanges } from "../data/queries"
 import { useWorkspaceContext } from "../workspaces/context"
 import { StepHeader } from "../workspaces/StepHeader"
 import { AppliedResult, ApplyFailure, ApplyProgress, type AppliedSummary } from "./ApplyPanel"
@@ -119,7 +122,7 @@ function Design({
   wsId: number
   sheetRows: number | null
   p: ProposalOut
-  /** some design is applied, so Query has tables to run SQL on */
+  /** some design is applied, so the Data page has tables (and maybe edits) */
   queryable: boolean
 }) {
   const build = useBuildProposal(wsId)
@@ -140,6 +143,15 @@ function Design({
     }
   }
   const [hovered, setHovered] = useState<number | null>(null)
+  // Re-applying rebuilds the tables from the sheet, so rows edited on the Data page would be lost: ask first.
+  const dataChanges = useDataChanges(wsId, queryable && !applied)
+  const editedRows = dataChanges.data?.edited_rows ?? 0
+  const [confirmApply, setConfirmApply] = useState(false)
+  const startApply = () => {
+    setConfirmApply(false)
+    setPanelOpenState(true) // the progress and the result live in the panel
+    apply.mutate(p.id)
+  }
 
   // What the result card shows: this session's apply, else what the catalog says exists now.
   const summary: AppliedSummary | null = useMemo(() => {
@@ -193,8 +205,8 @@ function Design({
       >
         Edit as new draft
       </Button>
-      <Link to={`/w/${wsId}/query`} className={buttonClass("primary")}>
-        Open Query
+      <Link to={`/w/${wsId}/data`} className={buttonClass("primary")}>
+        Open Data
       </Link>
     </>
   ) : (
@@ -213,10 +225,7 @@ function Design({
         variant="primary"
         loading={apply.isPending}
         disabled={busy}
-        onClick={() => {
-          setPanelOpenState(true) // the progress and the result live in the panel
-          apply.mutate(p.id)
-        }}
+        onClick={() => (editedRows > 0 ? setConfirmApply(true) : startApply())}
       >
         {apply.isPending ? "Applying" : "Apply design"}
       </Button>
@@ -327,6 +336,27 @@ function Design({
           </div>
         </aside>
       </div>
+      <Dialog
+        open={confirmApply}
+        onClose={() => setConfirmApply(false)}
+        title="Discard the edits made in Data?"
+        description={
+          <>
+            Re-applying rebuilds the tables from the sheet and discards {fmtInt(editedRows)}{" "}
+            {editedRows === 1 ? "edit" : "edits"} made on the Data page (rows added, changed or deleted since the last
+            apply).
+          </>
+        }
+      >
+        <div className="flex justify-end gap-2">
+          <Button variant="ghost" onClick={() => setConfirmApply(false)}>
+            Keep my edits
+          </Button>
+          <Button variant="danger" onClick={startApply}>
+            Apply and discard edits
+          </Button>
+        </div>
+      </Dialog>
     </ErContext.Provider>
   )
 }

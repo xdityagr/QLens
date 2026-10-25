@@ -69,9 +69,9 @@ export function DesignAssistant({
   )
   const sqlAction: SqlAction | null = queryable
     ? {
-        label: "Open in Query",
+        label: "Open in SQL",
         icon: <SquareArrowOutUpRight size={13} strokeWidth={1.9} />,
-        run: (sql) => navigate(`/w/${wsId}/query`, { state: { open: { sql } } }),
+        run: (sql) => navigate(`/w/${wsId}/data?tab=sql`, { state: { open: { sql } } }),
       }
     : null
 

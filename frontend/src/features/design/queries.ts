@@ -2,6 +2,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { ApiError, designApi } from "../../lib/api"
 import { schemaKey } from "../../lib/schema"
 import type { ApplyOut, ProposalOut } from "../../lib/types"
+import { invalidateData } from "../data/queries"
 import { refreshWorkspace } from "../import/queries"
 import type { RenameTarget } from "./erContext"
 
@@ -89,7 +90,9 @@ export function useApply(wsId: number) {
       if (p && p.id === proposalId) qc.setQueryData(proposalKey(wsId), { ...p, status: "applied", lossless_ok: true })
       qc.setQueryData(proposalSqlKey(wsId), { sql: r.sql })
       qc.invalidateQueries({ queryKey: schemaKey(wsId) })
-      // the rail unlocks Query and Performance once the workspace is applied
+      // the tables were rebuilt from the sheet: rows, the edit count, plans and step-throughs are all stale
+      invalidateData(qc, wsId)
+      // the rail unlocks Data once the workspace is applied
       refreshWorkspace(qc, wsId)
     },
     onError: (e) => {
