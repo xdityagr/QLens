@@ -1,10 +1,13 @@
 import type {
   AnalysisOut,
   ApiErrorBody,
+  ApplyOut,
   DatasetDetailOut,
   DatasetOut,
   FDOut,
+  ProposalOut,
   SampleName,
+  SchemaOut,
   UserOut,
   WorkspaceOut,
 } from "./types"
@@ -134,4 +137,21 @@ export const analysisApi = {
       json: overrides && Object.keys(overrides).length ? { overrides } : {},
     }),
   acceptAll: (wsId: number) => api<AnalysisOut>(`${ws(wsId)}/cleanup/accept-all`, { method: "POST" }),
+}
+
+// ---- design -----------------------------------------------------------------
+
+export const designApi = {
+  /** the draft being edited if there is one, else the applied design (404 no_proposal when neither) */
+  get: (wsId: number) => api<ProposalOut>(`${ws(wsId)}/proposal`),
+  /** build a fresh draft from the accepted dependencies */
+  build: (wsId: number) => api<ProposalOut>(`${ws(wsId)}/proposal`, { method: "POST" }),
+  renameTable: (wsId: number, tableId: number, name: string) =>
+    api<ProposalOut>(`${ws(wsId)}/proposal/tables/${tableId}`, { method: "PATCH", json: { name } }),
+  renameColumn: (wsId: number, columnId: number, name: string) =>
+    api<ProposalOut>(`${ws(wsId)}/proposal/columns/${columnId}`, { method: "PATCH", json: { name } }),
+  sql: (wsId: number) => api<{ sql: string }>(`${ws(wsId)}/proposal/sql`),
+  apply: (wsId: number, proposalId: number) =>
+    api<ApplyOut>(`${ws(wsId)}/apply`, { method: "POST", json: { proposal_id: proposalId } }),
+  schema: (wsId: number, kind: "main" | "lab" = "main") => api<SchemaOut>(`${ws(wsId)}/schema?kind=${kind}`),
 }

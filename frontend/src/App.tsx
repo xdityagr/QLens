@@ -4,6 +4,7 @@ import { FullPageSpinner } from "./components/Spinner"
 import { LoginPage } from "./features/auth/LoginPage"
 import { SignupPage } from "./features/auth/SignupPage"
 import { AnalyzePage } from "./features/analyze/AnalyzePage"
+import { DesignPage } from "./features/design/DesignPage"
 import { useMe } from "./features/auth/useAuth"
 import { ImportPage } from "./features/import/ImportPage"
 import { LandingPage } from "./features/landing/LandingPage"
@@ -51,7 +52,8 @@ export default function App() {
               <Route index element={<Navigate to="import" replace />} />
               <Route path="import" element={<ImportPage />} />
               <Route path="analyze" element={<AnalyzePage />} />
-              {STEPS.filter((s) => s.key !== "import" && s.key !== "analyze").map((s) => (
+              <Route path="design" element={<DesignPage />} />
+              {STEPS.filter((s) => s.key !== "import" && s.key !== "analyze" && s.key !== "design").map((s) => (
                 <Route key={s.key} path={s.key} element={<StepPlaceholder step={s.key} />} />
               ))}
             </Route>

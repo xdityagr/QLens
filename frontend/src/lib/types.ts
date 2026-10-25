@@ -119,3 +119,85 @@ export interface AnalysisOut {
   duplicates: DuplicateGroupOut[]
   inconsistencies: InconsistencyOut[]
 }
+
+// ---- design (Tasks 10/11) ---------------------------------------------------
+
+export type ColumnRole = "pk" | "fk" | "attribute"
+export type ProposalStatus = "draft" | "applied" | "superseded"
+
+export interface ProposedColumnOut {
+  id: number
+  name: string
+  data_type: string
+  role: ColumnRole
+  not_null: boolean
+  references_table_id: number | null
+  /** the sheet column an attribute holds; null for ids and foreign keys */
+  source_column: string | null
+  /** the sheet header behind the column (for a foreign key, that of the natural key it stands for) */
+  source_label: string | null
+}
+
+export interface TableOut {
+  id: number
+  name: string
+  kind: "entity" | "fact"
+  color_index: number
+  explanation: string
+  columns: ProposedColumnOut[]
+  /** column names; for an entity the first key is its natural key */
+  unique_keys: string[][]
+}
+
+export interface ProposalOut {
+  id: number
+  status: ProposalStatus
+  lossless_ok: boolean | null
+  source_columns: string[]
+  tables: TableOut[]
+}
+
+export interface AppliedTable {
+  name: string
+  row_count: number
+  color_index: number
+}
+
+export interface ApplyOut {
+  ok: boolean
+  lossless_ok: boolean
+  staging_rows: number
+  reconstructed_rows: number
+  mismatch_rows: number
+  tables: AppliedTable[]
+  duration_ms: number
+  sql: string
+}
+
+/** detail of a 409 lossless_check_failed */
+export interface LosslessFailure {
+  mismatch_rows: number
+  extra_rows?: number
+  missing_rows?: number
+  sample: { side: "missing" | "extra"; row: Record<string, Cell> }[]
+}
+
+export interface SchemaColumn {
+  name: string
+  data_type: string
+  not_null: boolean
+  is_pk: boolean
+  fk: { table: string; column: string } | null
+}
+
+export interface SchemaTable {
+  name: string
+  color_index: number
+  row_count: number
+  columns: SchemaColumn[]
+  indexes: { name: string; columns: string[]; unique: boolean }[]
+}
+
+export interface SchemaOut {
+  tables: SchemaTable[]
+}

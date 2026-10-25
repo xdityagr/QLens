@@ -1,0 +1,199 @@
+/* Design screen: the ER canvas. Motion is transform / opacity / stroke-dashoffset only. */
+
+.er-flow {
+  --er-dot: #262626;
+  --er-card: var(--surface);
+  background: var(--bg);
+}
+:root[data-theme="light"] .er-flow {
+  --er-dot: #d2d2d2;
+  --er-card: var(--raised);
+}
+.er-flow .react-flow__pane {
+  cursor: grab;
+}
+.er-flow .react-flow__pane.dragging {
+  cursor: grabbing;
+}
+.er-flow .react-flow__node {
+  cursor: default;
+}
+
+/* ---- table card ---- */
+.er-card {
+  position: relative;
+  overflow: hidden;
+  border-radius: var(--radius-card);
+  border: 1px solid var(--border-strong);
+  background: var(--er-card);
+  transition:
+    border-color 160ms ease,
+    box-shadow 160ms ease,
+    opacity 200ms ease;
+}
+:root[data-theme="light"] .er-card {
+  box-shadow: var(--shadow-pop);
+}
+.er-card[data-hot="true"] {
+  border-color: color-mix(in oklab, var(--er-lane) 55%, transparent);
+  box-shadow: 0 0 0 3px color-mix(in oklab, var(--er-lane) 14%, transparent);
+}
+.er-card[data-dim="true"] {
+  opacity: 0.55;
+}
+.react-flow__node.dragging .er-card {
+  border-color: color-mix(in oklab, var(--er-lane) 70%, transparent);
+}
+
+.er-row {
+  transition: background-color 120ms ease;
+}
+.er-row:hover {
+  background: var(--hover);
+}
+
+.er-name-btn {
+  border-radius: 4px;
+  transition: background-color 120ms ease;
+}
+.er-name-btn[data-editable="true"]:hover {
+  background: color-mix(in oklab, var(--er-lane) 12%, transparent);
+  cursor: text;
+}
+
+.er-input {
+  min-width: 4ch;
+  border-radius: 4px;
+  border: 1px solid color-mix(in oklab, var(--er-lane) 60%, transparent);
+  background: var(--bg);
+  color: var(--text);
+  outline: none;
+  padding: 0 4px;
+  box-shadow: 0 0 0 3px color-mix(in oklab, var(--er-lane) 16%, transparent);
+}
+.er-input[aria-invalid="true"] {
+  border-color: var(--danger);
+  box-shadow: 0 0 0 3px color-mix(in oklab, var(--danger) 16%, transparent);
+}
+
+/* ---- entrance: nodes pop in left to right, then edges draw ---- */
+@keyframes er-node-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px) scale(0.94);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+.er-enter .er-card {
+  animation: er-node-in 420ms cubic-bezier(0.2, 0.75, 0.25, 1) both;
+  animation-delay: calc(var(--er-order, 0) * 90ms + 80ms);
+}
+
+@keyframes er-draw {
+  from {
+    stroke-dashoffset: 1;
+  }
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+@keyframes er-fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+.er-edge-line {
+  stroke-dasharray: 1;
+  animation: er-draw 560ms cubic-bezier(0.3, 0.6, 0.2, 1) both;
+}
+.er-edge-cap {
+  animation: er-fade-in 200ms ease both;
+}
+.er-edge {
+  transition: opacity 200ms ease;
+}
+
+/* ---- side panel + result ---- */
+@keyframes er-panel-in {
+  from {
+    opacity: 0;
+    transform: translateX(12px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+.er-panel-in {
+  animation: er-panel-in 240ms cubic-bezier(0.2, 0.7, 0.2, 1) both;
+}
+@keyframes er-rise {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+.er-rise {
+  animation: er-rise 320ms cubic-bezier(0.2, 0.7, 0.2, 1) both;
+}
+@keyframes er-check {
+  from {
+    stroke-dashoffset: 1;
+  }
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+.er-check path {
+  stroke-dasharray: 1;
+  animation: er-check 420ms cubic-bezier(0.3, 0.6, 0.2, 1) 160ms both;
+}
+@keyframes er-indeterminate {
+  from {
+    transform: translateX(-100%);
+  }
+  to {
+    transform: translateX(250%);
+  }
+}
+.er-progress {
+  animation: er-indeterminate 1100ms cubic-bezier(0.45, 0, 0.55, 1) infinite;
+}
+@keyframes er-pop {
+  from {
+    opacity: 0;
+    transform: translateY(4px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+.er-pop {
+  animation: er-pop 180ms ease-out both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .er-enter .er-card,
+  .er-edge-line,
+  .er-edge-cap,
+  .er-panel-in,
+  .er-rise,
+  .er-check path,
+  .er-pop {
+    animation: none;
+  }
+  .er-progress {
+    animation-duration: 3000ms;
+  }
+}
