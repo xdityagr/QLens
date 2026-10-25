@@ -66,9 +66,9 @@ NFR-2 & Performance & Analysis must feel interactive on sheets of a few thousand
 NFR-3 & Correctness and losslessness & The produced schema must be in 3NF, preserve the dependencies and reproduce the original data exactly. & Minimal cover, closure and Bernstein synthesis property-tested on thousands of random dependency sets; run-time \code{EXCEPT ALL} check at apply time. \\
 NFR-4 & Integrity & The database, not only the application, must reject invalid metadata. & 21 metadata tables with \code{CHECK}, \code{UNIQUE}, foreign keys, generated columns and partial unique indexes; checked by \code{test\_schema.py}. \\
 NFR-5 & Auditability & Every data change made by the cleanup step must be traceable and reversible in principle. & Each fix is stored in \code{dataset\_fixes} with the old value, new value and user. \\
-NFR-6 & Usability & Users with no SQL background must understand each screen. Plain-language labels, a pure-black dark theme and a light theme, and one consistent typeface (Space Grotesk). & Both themes implemented and captured in the screenshots of \cref{ch:implementation}. \\
+NFR-6 & Usability & Users with no SQL background must understand each screen. Plain-language labels, a pure-black dark theme and a light theme, and one consistent typeface (Space Grotesk). & Both themes implemented and captured in the screenshots in this report. \\
 NFR-7 & Portability and locality & The tool must run on one student laptop with no cloud service. & A private PostgreSQL 18 cluster is started and migrated by the application; no data leaves the machine except in the optional assistant. \\
-NFR-8 & Maintainability & Schema and code must evolve without manual steps and without regressions. & Numbered SQL migrations (001--004) applied by the migration runner; $\approx$208 automated backend tests and a frontend \code{vitest} suite, all passing. \\
+NFR-8 & Maintainability & Schema and code must evolve without manual steps and without regressions. & Numbered SQL migrations (001--004) applied by the migration runner; 212 automated backend tests and a frontend \code{vitest} suite, all passing. \\
 \bottomrule
 \end{tabularx}
 \end{table}
