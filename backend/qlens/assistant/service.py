@@ -2,6 +2,8 @@
 from datetime import datetime
 from typing import Any, Literal
 
+import logging
+
 import psycopg
 from psycopg.types.json import Jsonb
 from pydantic import BaseModel
@@ -12,7 +14,11 @@ from qlens.design import proposal
 from qlens.design.proposal import ProposalOut
 from qlens.errors import ApiError
 
+log = logging.getLogger(__name__)
+
 MAX_TOOL_ROUNDS = 6
+MAX_CALLS_PER_STEP = 8
+MAX_CALLS_PER_MESSAGE = 20
 HISTORY_MESSAGES = 20
 Context = Literal["design", "query"]
 
@@ -138,23 +144,29 @@ def respond(conn: psycopg.Connection, ws_id: int, user_id: int, message: str, co
         for round_no in range(MAX_TOOL_ROUNDS + 1):
             # After the last allowed round the model gets no tools, so it has to answer in words.
             step = model.step(system, turns, specs if round_no < MAX_TOOL_ROUNDS else [])
-            if not step.calls:
+            # In the last, tool-less round any function call the model still returns is ignored.
+            if not step.calls or round_no >= MAX_TOOL_ROUNDS:
                 reply = step.text
                 break
             turns.append(Turn(role="model", text=step.text, calls=step.calls, raw=step.raw))
             results = []
-            for call in step.calls:
-                outcome = (tools.execute(ctx, call.name, call.args) if call.name in names else
-                           tools.Outcome(False, {"code": "unknown_tool"}, f"There is no tool {call.name!r} here.",
-                                         f"Unknown tool {call.name}"))
+            for idx, call in enumerate(step.calls):
+                if idx >= MAX_CALLS_PER_STEP or len(calls) >= MAX_CALLS_PER_MESSAGE:
+                    outcome = tools.Outcome(False, {"code": "too_many_calls"}, "Too many tool calls; make fewer.",
+                                            f"{call.name} skipped: too many tool calls")
+                else:
+                    outcome = (tools.execute(ctx, call.name, call.args) if call.name in names else
+                               tools.Outcome(False, {"code": "unknown_tool"}, f"There is no tool {call.name!r} here.",
+                                             f"Unknown tool {call.name}"))
                 calls.append((call.name, call.args, outcome))
                 results.append(ToolResult(name=call.name, id=call.id, response=(
                     {"result": outcome.result} if outcome.ok else {"error": {**outcome.result, "message": outcome.error}})))
             turns.append(Turn(role="tool", results=results))
     except ModelError as e:
         # Raised, so the request transaction rolls back: no half-finished turn (or edit) is kept.
+        log.warning("assistant model call failed: %s", str(e)[:500])
         raise ApiError(502, "assistant_upstream_error", "The assistant could not get an answer from Gemini. "
-                       "Try again in a moment.", detail=str(e)[:300]) from None
+                       "Try again in a moment.") from None
 
     edited = any(o.ok and tools.TOOLS[name].edit for name, _, o in calls)
     intent = "edit" if edited else "answer"

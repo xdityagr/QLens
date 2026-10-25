@@ -17,7 +17,10 @@ from dataclasses import dataclass, field
 from time import perf_counter
 from typing import Annotated, Any
 
+import logging
+
 import psycopg
+from psycopg.types.json import Jsonb
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from qlens import db
@@ -31,6 +34,8 @@ from qlens.query import sandbox
 from qlens.query.routes import record_run
 from qlens.query.sandbox import QueryError, QueryResult
 from qlens.query.validate import validate_select
+
+log = logging.getLogger(__name__)
 
 MODEL_ROWS = 50          # rows of a run_sql result the model sees
 REPLY_ROWS = 20          # rows of a run_sql result returned to the client
@@ -59,6 +64,8 @@ class ToolContext:
     # Set by the first edit of the message: the version made for it, and what an undo goes back to.
     version_id: int | None = None
     base_id: int | None = None
+    # fd id -> its accepted flag before this message's first flip (undo restores these).
+    fd_flips: dict[int, bool] = field(default_factory=dict)
     sql_runs: list[SqlRun] = field(default_factory=list)
 
 
@@ -145,7 +152,7 @@ def _proposal_brief(p: ProposalOut) -> dict:
 
 
 def _draft_row(ctx: ToolContext, dataset_id: int) -> dict | None:
-    return ctx.conn.execute("SELECT id, based_on_id FROM qlens.schema_proposals "
+    return ctx.conn.execute("SELECT id, based_on_id, fd_changes FROM qlens.schema_proposals "
                             "WHERE dataset_id = %s AND status = 'draft'", (dataset_id,)).fetchone()
 
 
@@ -297,20 +304,27 @@ def explain_query(ctx: ToolContext, a: SqlArgs) -> tuple[dict, str]:
         raise ToolError(e.code, e.message) from None
     # The same sandbox as sandbox.run (workspace role, read-only transaction, statement timeout); plain
     # EXPLAIN plans the query without running it.
+    # TODO: reuse the sandbox's explain helper (explain_analyze work in query/sandbox.py) once it is committed.
     s = get_settings()
     try:
         conn = psycopg.connect(host=s.pg_host, port=s.pg_port, dbname=s.pg_dbname, user=db.ws_role(ctx.ws_id),
                                password=db.ws_password(ctx.ws_id), connect_timeout=5,
-                               options=f"-c search_path={db.ws_schema(ctx.ws_id, 'main')}")
+                               options=f"-c search_path={db.ws_schema(ctx.ws_id, 'main')},{db.ws_schema(ctx.ws_id, 'src')}")
     except psycopg.Error as e:
-        raise ToolError("db_error", f"Could not open a sandbox connection: {e}") from None
+        log.warning("explain_query: sandbox connection failed: %s", e)
+        raise ToolError("db_error", "The database is not reachable right now.") from None
     started = perf_counter()
     try:
         conn.read_only = True
         conn.execute("SELECT set_config('statement_timeout', %s, true)", (str(sandbox.MAX_TIMEOUT_MS),))
         plan = conn.execute("EXPLAIN (FORMAT JSON) " + sql_text, prepare=True).fetchone()[0][0]
     except psycopg.Error as e:
-        raise ToolError("db_error", e.diag.message_primary or str(e)) from None
+        log.warning("explain_query failed: %s", e)
+        if e.sqlstate == "53300":
+            raise ToolError("too_busy", "The database is busy; try again in a moment.") from None
+        if (e.sqlstate or "").startswith("42"):   # syntax error, unknown table or column: the model can fix these
+            raise ToolError("db_error", e.diag.message_primary or "The query is not valid.") from None
+        raise ToolError("db_error", "PostgreSQL could not plan this query.") from None
     finally:
         conn.rollback()
         conn.close()
@@ -353,7 +367,11 @@ def set_dependency_accepted(ctx: ToolContext, a: AcceptArgs) -> tuple[dict, str]
                         f"No dependency {' + '.join(lhs)} → {rhs} was found in the data; list_dependencies shows them.")
     ctx.conn.execute("UPDATE qlens.functional_dependencies SET accepted = %s WHERE id = %s AND dataset_id = %s",
                      (a.accepted, fd.id, ds["id"]))
+    ctx.fd_flips.setdefault(fd.id, fd.accepted)
     p = _rebuild(ctx, ds["id"])
+    # Recorded on the version this message made, so undoing it can put the flags back.
+    ctx.conn.execute("UPDATE qlens.schema_proposals SET fd_changes = %s WHERE id = %s",
+                     (Jsonb({str(k): v for k, v in ctx.fd_flips.items()}), p.id))
     out: dict[str, Any] = {"dependency": {"lhs": lhs, "rhs": rhs, "accepted": a.accepted, "exact": fd.is_exact}}
     if not a.accepted:
         # Other accepted dependencies can still imply it (batch -> teacher_phone -> teacher), in which case
@@ -379,9 +397,17 @@ def undo_last_edit(ctx: ToolContext, _: NoArgs) -> tuple[dict, str]:
     draft = _draft_row(ctx, ds["id"])
     if draft is None or draft["based_on_id"] is None:
         raise ToolError("nothing_to_undo", "There is no earlier version of the draft to go back to.")
-    target = ctx.conn.execute("SELECT id, based_on_id FROM qlens.schema_proposals WHERE id = %s",
+    target = ctx.conn.execute("SELECT id, based_on_id, fd_changes FROM qlens.schema_proposals WHERE id = %s",
                               (draft["based_on_id"],)).fetchone()
+    # Put back the dependency flags the undone version changed.
+    for fd_id, was in (draft["fd_changes"] or {}).items():
+        ctx.conn.execute("UPDATE qlens.functional_dependencies SET accepted = %s WHERE id = %s AND dataset_id = %s",
+                         (was, int(fd_id), ds["id"]))
     new = proposal.copy_as_draft(ctx.conn, ds["id"], target["id"], based_on_id=target["based_on_id"])
+    # The restored version keeps its own flips, so a further undo reverts those too.
+    ctx.conn.execute("UPDATE qlens.schema_proposals SET fd_changes = %s WHERE id = %s",
+                     (None if target["fd_changes"] is None else Jsonb(target["fd_changes"]), new))
+    ctx.fd_flips = {}
     # The next edit in this message starts a fresh version from the restored one.
     ctx.version_id = ctx.base_id = None
     return {"tables": _names(proposal.get_proposal(ctx.conn, new))}, "Undid the last design change"
@@ -447,12 +473,12 @@ def execute(ctx: ToolContext, name: str, args: dict) -> Outcome:
     except ValidationError as e:
         msg = "; ".join(f"{'.'.join(map(str, err['loc'])) or 'arguments'}: {err['msg']}" for err in e.errors())
         return Outcome(False, {"code": "invalid_arguments"}, msg, f"{name} failed: invalid arguments")
-    saved = (ctx.version_id, ctx.base_id)
+    saved = (ctx.version_id, ctx.base_id, dict(ctx.fd_flips))
     try:
         with ctx.conn.transaction():
             done = tool.fn(ctx, parsed)
     except (ToolError, ApiError) as e:
-        ctx.version_id, ctx.base_id = saved
+        ctx.version_id, ctx.base_id, ctx.fd_flips = saved
         return Outcome(False, {"code": e.code}, e.message, f"{name} failed: {e.message}")
     if isinstance(done, Outcome):
         return done

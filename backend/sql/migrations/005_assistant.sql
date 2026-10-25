@@ -17,6 +17,13 @@ ALTER TABLE qlens.schema_proposals
 CREATE INDEX schema_proposals_based_on_idx ON qlens.schema_proposals (based_on_id)
     WHERE based_on_id IS NOT NULL;
 
+-- Dependency flips made on the way to this draft, as {"<fd id>": previous accepted flag}. Undo puts
+-- those flags back, so going back to the previous design also brings back the dependencies it used.
+-- NULL when the version involved no flip.
+ALTER TABLE qlens.schema_proposals ADD COLUMN fd_changes jsonb;
+COMMENT ON COLUMN qlens.schema_proposals.fd_changes IS
+    'functional_dependencies.accepted values before the flips that produced this draft: {"<fd id>": bool}';
+
 -- ---------------------------------------------------------------------------------------------
 -- Conversations
 -- ---------------------------------------------------------------------------------------------

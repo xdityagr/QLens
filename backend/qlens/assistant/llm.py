@@ -4,11 +4,14 @@ The service only sees ChatModel.step: given the system prompt, the conversation 
 specs, the model answers with text and/or function calls. GeminiModel implements it with the official
 google-genai SDK (manual function calling: the SDK's automatic mode is off, the service runs the tools).
 """
+import logging
 from dataclasses import dataclass, field
 from functools import lru_cache
 from typing import Any, Literal, Protocol
 
 from qlens.config import get_settings
+
+log = logging.getLogger(__name__)
 
 CALL_TIMEOUT_MS = 30_000
 
@@ -106,6 +109,7 @@ class GeminiModel:
             response = self._client.models.generate_content(model=self.name, contents=self._contents(history),
                                                             config=config)
         except Exception as e:  # SDK API errors, timeouts, connection errors; none of them carry the key
+            log.warning("Gemini call failed: %s: %s", type(e).__name__, str(e)[:500])
             raise ModelError(f"{type(e).__name__}: {e}") from None
         candidate = response.candidates[0] if response.candidates else None
         if candidate is None or candidate.content is None:

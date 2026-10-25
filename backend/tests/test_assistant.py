@@ -224,6 +224,12 @@ def test_rename_errors(client, draft_ws, use_model, args, code):
     assert body["actions"][0]["ok"] is False and seen["error"]["code"] == code
 
 
+FD_ACCEPTED = ("SELECT f.accepted FROM qlens.functional_dependencies f "
+               "JOIN qlens.dataset_columns r ON r.id = f.rhs_column_id "
+               "JOIN qlens.fd_lhs_columns l ON l.fd_id = f.id JOIN qlens.dataset_columns lc ON lc.id = l.column_id "
+               "WHERE r.name = 'teacher' AND lc.name = 'batch' AND f.lhs_size = 1")
+
+
 def test_unaccepting_a_dependency_rebuilds_and_undo_restores(client, conn, draft_ws, use_model):
     use_model(FakeModel(call("rename_table", table="students", new_name="learners"), say("Renamed.")))
     first = ask(client, draft_ws.id, "rename students to learners")
@@ -249,16 +255,14 @@ def test_unaccepting_a_dependency_rebuilds_and_undo_restores(client, conn, draft
     assert {"lhs": ["batch"], "rhs": "teacher_phone"} in implied
     assert {"lhs": ["teacher_phone"], "rhs": "teacher"} in implied
     conn.rollback()
-    fd = conn.execute("SELECT f.accepted FROM qlens.functional_dependencies f "
-                      "JOIN qlens.dataset_columns r ON r.id = f.rhs_column_id "
-                      "JOIN qlens.fd_lhs_columns l ON l.fd_id = f.id JOIN qlens.dataset_columns lc ON lc.id = l.column_id "
-                      "WHERE r.name = 'teacher' AND lc.name = 'batch' AND f.lhs_size = 1").fetchone()
-    assert fd["accepted"] is False
+    assert conn.execute(FD_ACCEPTED).fetchone()["accepted"] is False
 
     use_model(FakeModel(call("undo_last_edit"), say("Back to how it was.")))
     undone = ask(client, draft_ws.id, "undo that", conversation_id=first["conversation_id"])
     assert undone["intent"] == "edit"
     assert table_names(undone["proposal"]) == ["learners", "batches", "teachers", "fee_register"]
+    conn.rollback()
+    assert conn.execute(FD_ACCEPTED).fetchone()["accepted"] is True   # undo brings the dependency back
     use_model(FakeModel(call("undo_last_edit"), say("Undone again.")))
     twice = ask(client, draft_ws.id, "and undo the rename too", conversation_id=first["conversation_id"])
     assert table_names(twice["proposal"]) == ["students", "batches", "teachers", "fee_register"]
@@ -458,6 +462,51 @@ def test_model_failure_is_502_and_keeps_nothing(client, conn, draft_ws, use_mode
     assert r.status_code == 502 and r.json()["error"]["code"] == "assistant_upstream_error"
     conn.rollback()
     assert conn.execute("SELECT count(*) AS n FROM qlens.assistant_messages").fetchone()["n"] == 0
+
+
+def test_gemini_429_becomes_a_502_without_the_sdk_text(client, conn, draft_ws, use_model):
+    from google.genai import errors
+
+    from qlens.assistant.llm import GeminiModel
+
+    class Models:
+        def generate_content(self, **_):
+            raise errors.ClientError(429, {"error": {"code": 429, "message": "quota SECRET-DETAIL",
+                                                     "status": "RESOURCE_EXHAUSTED"}})
+
+    model = GeminiModel("not-a-key", "gemini-test")
+    model._client = type("C", (), {"models": Models()})()
+    use_model(model)
+    r = client.post(f"/api/workspaces/{draft_ws.id}/assistant", json={"message": "hi"})
+    assert r.status_code == 502
+    err = r.json()["error"]
+    assert err["code"] == "assistant_upstream_error" and err["detail"] is None and "SECRET" not in r.text
+    conn.rollback()
+    assert conn.execute("SELECT count(*) AS n FROM qlens.assistant_messages").fetchone()["n"] == 0
+
+
+def test_the_final_round_ignores_function_calls(client, draft_ws, use_model):
+    # The model keeps calling tools even without any: no seventh round, and its text (none) falls back.
+    use_model(FakeModel(*[call("describe_schema")] * 7))
+    body = ask(client, draft_ws.id, "look around")
+    assert len(body["actions"]) == 6
+
+
+def test_excess_tool_calls_come_back_as_errors(client, draft_ws, use_model):
+    many = ModelStep(text=None, calls=[FunctionCall(name="describe_schema", args={}, id=f"c{i}") for i in range(10)])
+    body = ask_with(client, draft_ws, use_model, FakeModel(many, say("ok")))
+    assert [a["ok"] for a in body["actions"]] == [True] * 8 + [False] * 2
+
+
+def test_calls_per_message_are_capped(client, draft_ws, use_model):
+    step = ModelStep(text=None, calls=[FunctionCall(name="describe_schema", args={}, id=f"c{i}") for i in range(8)])
+    body = ask_with(client, draft_ws, use_model, FakeModel(step, step, step, say("ok")))
+    assert [a["ok"] for a in body["actions"]].count(True) == 20 and len(body["actions"]) == 24
+
+
+def ask_with(client, ws, use_model, model):
+    use_model(model)
+    return ask(client, ws.id, "look around")
 
 
 def test_edit_then_model_failure_rolls_the_edit_back(client, conn, draft_ws, use_model):
