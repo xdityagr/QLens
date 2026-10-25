@@ -22,6 +22,7 @@ from qlens.query.serialize import cell
 MAX_TIMEOUT_MS = 5000
 _CURSOR = "qlens_run"
 _DECLARE = f"DECLARE {_CURSOR} NO SCROLL CURSOR WITHOUT HOLD FOR "
+_EXPLAIN = "EXPLAIN (ANALYZE, BUFFERS, FORMAT JSON) "
 
 # oid -> display name; builtin and user type oids are stable for the life of the cluster.
 _type_names: dict[int, str] = {}
@@ -87,14 +88,13 @@ def _error(e: psycopg.Error, started: float, prefix_len: int = 0) -> QueryError:
                       int(position) - prefix_len if position and int(position) > prefix_len else None, duration)
 
 
-def run(ws_id: int, sql_text: str, *, target: Literal["main", "lab"] = "main",
-        max_rows: int = 1000, timeout_ms: int = MAX_TIMEOUT_MS) -> QueryResult:
+def _connect(ws_id: int, target: Literal["main", "lab"]) -> psycopg.Connection:
+    """A fresh connection as the workspace's own LOGIN role, seeing only the target schema (and _src)."""
     settings = get_settings()
-    timeout = max(1, min(int(timeout_ms), MAX_TIMEOUT_MS))
     # Startup options outrank the role's ALTER ROLE ... SET search_path, which only knows the main schema.
     search_path = f"{db.ws_schema(ws_id, target)},{db.ws_schema(ws_id, 'src')}"
     try:
-        conn = psycopg.connect(host=settings.pg_host, port=settings.pg_port, dbname=settings.pg_dbname,
+        return psycopg.connect(host=settings.pg_host, port=settings.pg_port, dbname=settings.pg_dbname,
                                user=db.ws_role(ws_id), password=db.ws_password(ws_id),
                                connect_timeout=5, prepare_threshold=5, options=f"-c search_path={search_path}")
     except psycopg.Error as e:
@@ -103,13 +103,49 @@ def run(ws_id: int, sql_text: str, *, target: Literal["main", "lab"] = "main",
             raise QueryError("db_error", "Too many queries are running for this workspace — try again in a moment.",
                              e.sqlstate) from None
         raise QueryError("db_error", "Could not reach the sandbox database.", e.sqlstate) from None
+
+
+def _begin(conn: psycopg.Connection, timeout_ms: int) -> None:
+    conn.read_only = True  # the transaction opens as BEGIN READ ONLY
+    # cursor_tuple_fraction = 1: plan for all rows, as a plain SELECT would be, so timings match EXPLAIN.
+    conn.execute("SELECT set_config('statement_timeout', %s, true), set_config('cursor_tuple_fraction', '1', true)",
+                 (str(max(1, min(int(timeout_ms), MAX_TIMEOUT_MS))),))
+
+
+def explain_analyze(ws_id: int, sql_text: str, *, target: Literal["main", "lab"] = "main", runs: int = 1,
+                    timeout_ms: int = MAX_TIMEOUT_MS) -> list[dict]:
+    """EXPLAIN (ANALYZE, BUFFERS, FORMAT JSON) of an already validated SELECT, `runs` times in one connection.
+
+    Same guarantees as run(): workspace role, READ ONLY transaction rolled back, statement_timeout per statement.
+    Returns each run's plan document (the single element of EXPLAIN's JSON array).
+    """
+    conn = _connect(ws_id, target)
+    started = perf_counter()
+    try:
+        _begin(conn, timeout_ms)
+        plans = []
+        for _ in range(runs):
+            started = perf_counter()
+            # prepare=True: the extended protocol refuses a second statement smuggled in after the SELECT.
+            plans.append(conn.execute(_EXPLAIN + sql_text, prepare=True).fetchone()[0][0])
+        return plans
+    except psycopg.Error as e:
+        raise _error(e, started, len(_EXPLAIN)) from None
+    finally:
+        try:
+            conn.rollback()
+        except psycopg.Error:
+            pass
+        conn.close()
+
+
+def run(ws_id: int, sql_text: str, *, target: Literal["main", "lab"] = "main",
+        max_rows: int = 1000, timeout_ms: int = MAX_TIMEOUT_MS) -> QueryResult:
+    conn = _connect(ws_id, target)
     started = perf_counter()
     try:
         _install_tolerant_loaders(conn)
-        conn.read_only = True  # the transaction opens as BEGIN READ ONLY
-        # cursor_tuple_fraction = 1: plan for all rows, as a plain SELECT would be, so timings match EXPLAIN.
-        conn.execute("SELECT set_config('statement_timeout', %s, true), set_config('cursor_tuple_fraction', '1', true)",
-                     (str(timeout),))
+        _begin(conn, timeout_ms)
         started = perf_counter()
         # prepare=True forces the extended protocol, which refuses a second statement smuggled in after the SELECT.
         conn.execute(_DECLARE + sql_text, prepare=True)

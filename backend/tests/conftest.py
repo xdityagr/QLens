@@ -190,3 +190,13 @@ def other_applied_ws(conn, make_workspace) -> WsHandle:
     apply_proposal(conn, ws.id, build(conn, ws.dataset_id).id)
     conn.commit()
     return ws
+
+
+@pytest.fixture
+def applied_fee_scaled(conn, applied_fee) -> WsHandle:
+    """applied_fee with its performance lab built and the fact table (fee_register) scaled x10: 30,000 rows."""
+    from qlens.perf.lab import scale
+
+    scale(conn, applied_fee.id, 10)
+    conn.commit()
+    return applied_fee
