@@ -11,13 +11,8 @@ import { HistoryPage } from "./features/history/HistoryPage"
 import { ImportPage } from "./features/import/ImportPage"
 import { LandingPage } from "./features/landing/LandingPage"
 import { DashboardPage } from "./features/workspaces/DashboardPage"
-import { StepPlaceholder } from "./features/workspaces/StepPlaceholder"
 import { WorkspaceLayout } from "./features/workspaces/WorkspaceLayout"
 import { ApiError } from "./lib/api"
-import { STEPS, type StepKey } from "./lib/steps"
-
-// Steps with a real screen; the rest still get StepPlaceholder.
-const BUILT = new Set<StepKey>(["import", "analyze", "design", "data", "history"])
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -69,9 +64,6 @@ export default function App() {
               <Route path="query" element={<ToSqlTab />} />
               <Route path="perf" element={<ToSqlTab />} />
               <Route path="history" element={<HistoryPage />} />
-              {STEPS.filter((s) => !BUILT.has(s.key)).map((s) => (
-                <Route key={s.key} path={s.key} element={<StepPlaceholder step={s.key} />} />
-              ))}
             </Route>
           </Route>
           <Route path="*" element={<Navigate to="/" replace />} />

@@ -211,8 +211,8 @@ const STEPS: { title: string; body: string; lane: number; visual: ReactNode }[] 
     visual: <DesignVisual />,
   },
   {
-    title: "Query",
-    body: "Run read-only SQL on the new tables, step through how a query is evaluated, and read its plan node by node.",
+    title: "Data",
+    body: "Browse and edit rows, run SELECTs and confirmed INSERT, UPDATE or DELETE statements, step through a query, read its plan, or ask in plain English with Ask AI.",
     lane: 4,
     visual: <QueryVisual />,
   },
@@ -225,7 +225,8 @@ function HowItWorks() {
         <InView className="max-w-[640px]">
           <h2 className="ld-reveal ld-display text-[40px] text-text sm:text-[60px]">Four steps, all of them SQL.</h2>
           <p className="ld-reveal mt-5 max-w-[52ch] text-[16px] leading-relaxed text-muted" style={d(120)}>
-            Every check QLens makes runs as a query inside PostgreSQL, and you can open the SQL behind each one.
+            Every check QLens makes runs as a query inside PostgreSQL, and the Design step shows the exact DDL before
+            it runs.
           </p>
         </InView>
 
@@ -394,15 +395,16 @@ function AssistantTeaser() {
           <span className="ld-reveal inline-flex h-6 items-center rounded-full border px-2.5 text-[12px] font-medium"
             style={{ borderColor: laneAlpha(1, 0.4), color: laneVar(1), background: laneAlpha(1, 0.1) }}
           >
-            Coming soon
+            Optional · needs a Gemini API key
           </span>
           <h2 className="ld-reveal ld-display mt-5 max-w-[14ch] text-[40px] text-text sm:text-[56px]" style={d(80)}>
             Rework the design by asking.
           </h2>
           <p className="ld-reveal mt-6 max-w-[46ch] text-[16px] leading-relaxed text-muted" style={d(160)}>
-            A command bar on the design canvas will take plain requests. Questions get answered with the SQL that was
-            run; edits like renames go through checked tools, show up on the diagram, and can be undone. It isn't in
-            QLens yet.
+            The command bar on the design canvas and Ask AI on the Data page take plain requests. Questions get
+            answered with the SQL that was run; edits like renames go through checked tools, show up on the diagram,
+            and can be undone. Both use Google Gemini, so they need a Gemini API key; everything else works without
+            one.
           </p>
         </div>
       </div>

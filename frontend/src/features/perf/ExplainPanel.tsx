@@ -7,6 +7,7 @@ import { Spinner } from "../../components/Spinner"
 import { ApiError } from "../../lib/api"
 import { fmtInt, fmtMs } from "../../lib/format"
 import { relationOf, suggestionText, type PlanOut } from "../../lib/plan"
+import { useReducedMotion } from "../../lib/reveal"
 import { useAppliedSchema } from "../../lib/schema"
 import { locateError } from "../../lib/sqlText"
 import type { QueryErrorDetail } from "../query/api"
@@ -89,6 +90,15 @@ export function ExplainPanel({ wsId, sql, onClose, className = "" }: ExplainPane
     test.mutate({ sql, suggestion: s })
   }
 
+  // The result lands below the suggestions, often under the fold: bring it into view once it arrives.
+  const reduced = useReducedMotion()
+  const resultRef = useRef<HTMLDivElement>(null)
+  const resultId = result?.experiment.id
+  useEffect(() => {
+    if (resultId === undefined) return
+    resultRef.current?.scrollIntoView({ behavior: reduced ? "auto" : "smooth", block: "nearest" })
+  }, [resultId, reduced])
+
   const busy = test.isPending || reset.isPending
   const data = explainQ.data
 
@@ -164,13 +174,15 @@ export function ExplainPanel({ wsId, sql, onClose, className = "" }: ExplainPane
             />
 
             {result && (
-              <BeforeAfter
-                key={result.experiment.id}
-                experiment={result.experiment}
-                note={measuredNote(result.lab)}
-                laneOf={laneOf}
-                tableOfIndex={tableOfIndex}
-              />
+              <div ref={resultRef} className="scroll-mt-4">
+                <BeforeAfter
+                  key={result.experiment.id}
+                  experiment={result.experiment}
+                  note={measuredNote(result.lab)}
+                  laneOf={laneOf}
+                  tableOfIndex={tableOfIndex}
+                />
+              </div>
             )}
           </>
         ) : null}
