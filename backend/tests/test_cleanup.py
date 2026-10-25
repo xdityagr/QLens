@@ -109,25 +109,65 @@ def test_dismissed_and_merged_groups_survive_reanalysis(conn, fee_ws):
     assert status["Riya Sharma"] == "merged" and status["Aman Verma"] == "dismissed"
     assert status["Neha Singh"] == "pending" and status["Karan Mehta"] == "pending"
     assert {d.id for d in again.duplicates if d.status != "pending"} == {merged.id, dismissed.id}
-    # Re-running detection replaces the pending groups instead of piling up copies. The merged spelling
-    # is now a single value, so it can show up as a "similar" candidate that it was not before.
-    new = [d for d in again.duplicates if d.status == "pending" and d.canonical_value not in
-           {g.canonical_value for g in a.duplicates}]
-    assert len(new) == 1 and new[0].confidence == "similar"
-    assert {"Priya Sharma", "Riya Sharma"} <= {v.value for v in new[0].values}
-    assert len(again.duplicates) == len(a.duplicates) + 1
+    # Re-running detection replaces the pending groups instead of piling up copies.
+    assert len(again.duplicates) == len(a.duplicates)
+
+
+def ds_of(conn, ws_id):
+    return conn.execute("SELECT id FROM qlens.datasets WHERE workspace_id = %s", (ws_id,)).fetchone()["id"]
+
+
+def test_typo_is_rarer_than_the_correct_spelling(conn, workspace):
+    rows = ["City,Row"] + [f"Bangalore,{i}" for i in range(20)] + [f"Banglore,{i}" for i in range(20, 22)]         + [f"Mumbai,{i}" for i in range(22, 30)]
+    import_dataset(conn, workspace, "t.csv", "\n".join(rows).encode(), "upload")
+    a = analyze(conn, ds_of(conn, workspace))
+    g = next(d for d in a.duplicates if d.column == "city")
+    assert g.confidence == "similar" and g.canonical_value == "Bangalore"
+    assert {(v.value, v.rows) for v in g.values} == {("Bangalore", 20), ("Banglore", 2)}
+    assert 0.5 <= g.max_similarity < 1 and len(a.duplicates) == 1
+
+
+def test_equally_frequent_lookalikes_are_not_grouped(conn, workspace):
+    rows = ["Name,Row"] + [f"Ananya,{i}" for i in range(10)] + [f"Anaya,{i}" for i in range(10, 20)]
+    import_dataset(conn, workspace, "t.csv", "\n".join(rows).encode(), "upload")
+    assert analyze(conn, ds_of(conn, workspace)).duplicates == []
+
+
+def test_similar_groups_per_sample(conn, fee_ws, kirana_ws, hostel_ws):
+    # Real people and items occur as often as each other; only the planted variants are suggested.
+    for ws in (fee_ws, kirana_ws, hostel_ws):
+        a = analyze(conn, ws.dataset_id)
+        assert [d for d in a.duplicates if d.confidence == "similar"] == []
+        assert {d.confidence for d in a.duplicates} == {"same_normalized"}
+    fee = analyze(conn, fee_ws.dataset_id)
+    assert not any({"Priya Sharma", "Riya Sharma"} <= {v.value for v in d.values} for d in fee.duplicates)
+
+
+def test_find_duplicates_on_5000_distinct_values(conn, workspace):
+    import random
+    rng = random.Random(7)
+    syl = ["ra", "mo", "ki", "sha", "an", "ve", "lu", "dar", "ti", "pre", "nan", "jay", "ku", "mar", "sai", "gop"]
+    names = set()
+    while len(names) < 5000:
+        names.add(" ".join("".join(rng.choices(syl, k=rng.randint(2, 3))).title() for _ in range(2)))
+    rows = ["Name,Row"] + [f"{n},{i}" for i, n in enumerate(sorted(names))]
+    import_dataset(conn, workspace, "t.csv", "\n".join(rows).encode(), "upload")
+    ds = ds_of(conn, workspace)
+    import time
+    t = time.perf_counter()
+    find_duplicates(conn, ds)
+    elapsed = time.perf_counter() - t
+    print(f"find_duplicates over 5000 distinct values took {elapsed:.2f}s")
+    assert elapsed < 5
 
 
 def test_similar_but_not_identical_values(conn, workspace):
-    import_dataset(conn, workspace, "t.csv",
-                   b"Shop,Item\nSharma Traders,a\nSharma Traders,b\nSharma Trader,c\nGupta Stores,d\n"
-                   b"Gupta Stores,e\nVerma Kirana,f\n", "upload")
-    ds = conn.execute("SELECT id FROM qlens.datasets WHERE workspace_id = %s", (workspace,)).fetchone()["id"]
-    a = analyze(conn, ds)
+    rows = ["Shop,Item"] + [f"Sharma Traders,{i}" for i in range(6)] + ["Sharma Trader,x"]         + [f"Gupta Stores,{i}" for i in range(3)] + ["Verma Kirana,y"]
+    import_dataset(conn, workspace, "t.csv", "\n".join(rows).encode(), "upload")
+    a = analyze(conn, ds_of(conn, workspace))
     g = next(d for d in a.duplicates if d.column == "shop")
     assert g.confidence == "similar" and g.canonical_value == "Sharma Traders"
     assert {v.value for v in g.values} == {"Sharma Traders", "Sharma Trader"}
-    assert 0.6 <= g.max_similarity < 1
     assert len(a.duplicates) == 1
 
 

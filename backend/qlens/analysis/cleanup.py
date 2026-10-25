@@ -19,7 +19,8 @@ if TYPE_CHECKING:
     from qlens.analysis.discover import AnalysisOut
 
 MAX_DISTINCT = 5000          # the self-join below is quadratic in distinct values
-SIMILARITY_THRESHOLD = 0.6
+SIMILARITY_THRESHOLD = 0.5
+SIMILAR_MAX_FREQ_RATIO = 1 / 3      # a typo is rarer than the correct spelling
 
 # Spellings that differ only in case, spacing or full stops ("Mrs. Rao" / "Mrs Rao") are certain duplicates.
 _NORMALIZED = r"lower(regexp_replace(btrim({}), '[\s.]+', ' ', 'g'))"
@@ -134,16 +135,29 @@ def _column_clusters(conn: psycopg.Connection, ws_id: int, name: str) -> list[tu
     out += [("same_normalized", best[norm], members) for norm, members in by_norm.items()]
 
     # Probable duplicates (typos) are only sought among values that have no certain duplicate: a spelling
-    # already explained as a variant must not also appear in a second group. Two values whose digits differ
-    # are different things, not misspellings ("Foundation 9" / "Foundation 10", bill KB-0001 / KB-0008,
-    # two phone numbers), although they share most trigrams.
+    # already explained as a variant must not also appear in a second group. Two further rules keep the
+    # suggestions few: values whose digits differ are different things ("Foundation 9" / "Foundation 10",
+    # bill KB-0001 / KB-0008, two phone numbers), and a typo is rarer than the correct spelling, so
+    # two equally frequent look-alikes (Ananya / Anaya, 10 rows each) are two real values.
+    # The candidates go into a temp table with a trigram GIN index so that the `%` operator finds
+    # the look-alikes of each value without comparing every pair.
+    conn.execute("DROP TABLE IF EXISTS pg_temp._qlens_vals")
+    conn.execute(values + sql.SQL(
+        "SELECT val, n INTO TEMP TABLE _qlens_vals FROM c WHERE cls = 1 AND val ~ '[[:alpha:]]'"))
+    conn.execute("CREATE INDEX ON pg_temp._qlens_vals USING gin (val gin_trgm_ops)")
+    conn.execute("ANALYZE pg_temp._qlens_vals")
+    conn.execute("SELECT set_config('pg_trgm.similarity_threshold', %s, true)", (str(SIMILARITY_THRESHOLD),))
     clusters, counts, sims = _Clusters(), {}, {}
-    pairs = conn.execute(values + sql.SQL(
-        "SELECT a.val AS a, a.n AS an, b.val AS b, b.n AS bn, similarity(a.val, b.val) AS sim "
-        "FROM c a JOIN c b ON a.val < b.val AND a.cls = 1 AND b.cls = 1 "
-        "WHERE regexp_replace(a.val, '[^0-9]', '', 'g') = regexp_replace(b.val, '[^0-9]', '', 'g') "
-        "AND similarity(a.val, b.val) >= %s"),
-        (SIMILARITY_THRESHOLD,)).fetchall()
+    # MATERIALIZED: the cheap equality tests below must not become the join key (all digit-free values
+    # would then pair with each other); the index-backed `%` join has to run first.
+    pairs = conn.execute(
+        "WITH m AS MATERIALIZED (SELECT a.val AS a, a.n AS an, b.val AS b, b.n AS bn "
+        "                        FROM pg_temp._qlens_vals a JOIN pg_temp._qlens_vals b "
+        "                        ON a.val %% b.val AND a.val < b.val) "
+        "SELECT a, an, b, bn, similarity(a, b) AS sim FROM m "
+        "WHERE regexp_replace(a, '[^0-9]', '', 'g') = regexp_replace(b, '[^0-9]', '', 'g') "
+        "AND least(an, bn) <= greatest(an, bn) * %s", (SIMILAR_MAX_FREQ_RATIO,)).fetchall()
+    conn.execute("DROP TABLE pg_temp._qlens_vals")
     for r in pairs:
         counts[r["a"]], counts[r["b"]] = r["an"], r["bn"]
         clusters.union(r["a"], r["b"])
