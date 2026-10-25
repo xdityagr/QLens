@@ -1,0 +1,11 @@
+Samples/
+*.docx
+.env
+.env.*
+!.env.example
+.venv/
+node_modules/
+dist/
+__pycache__/
+*.pyc
+.pytest_cache/
