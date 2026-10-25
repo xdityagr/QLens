@@ -53,8 +53,8 @@ export function StepRail({
 
   if (orientation === "horizontal") {
     return (
-      <nav ref={strip} aria-label="Workspace steps" className="scrollbar-thin overflow-x-auto">
-        <ol className="flex min-w-max items-center gap-1 px-4 py-2">
+      <nav ref={strip} aria-label="Workspace steps" className="scrollbar-thin w-full overflow-x-auto overflow-y-hidden">
+        <ol className="flex min-w-max items-center gap-1 px-4 py-1.5">
           {steps.map((s, i) => (
             <li key={s.key} className="flex items-center gap-1">
               <NavLink

@@ -18,6 +18,7 @@ export function Composer({
   label,
   inputRef,
   note,
+  disabled = false,
 }: {
   value: string
   onChange: (v: string) => void
@@ -29,13 +30,15 @@ export function Composer({
   inputRef?: RefObject<HTMLTextAreaElement | null>
   /** one line under the box */
   note?: string
+  /** not ready for a question yet (e.g. a conversation is being reopened) */
+  disabled?: boolean
 }) {
   const ownRef = useRef<HTMLTextAreaElement>(null)
   const ref = inputRef ?? ownRef
   const [focused, setFocused] = useState(false)
   const noteId = useId()
   const busy = pending !== null
-  const canSend = !busy && value.trim().length > 0
+  const canSend = !busy && !disabled && value.trim().length > 0
   useFocusHotkey(ref, true)
 
   // grow with the text up to MAX_HEIGHT, then scroll inside
@@ -68,13 +71,15 @@ export function Composer({
           ref={ref}
           rows={1}
           value={value}
+          disabled={disabled}
           maxLength={2000}
           onChange={(e) => onChange(e.target.value)}
           onFocus={() => setFocused(true)}
           onBlur={() => setFocused(false)}
           onKeyDown={(e) => {
-            // Enter sends; Shift+Enter, and Enter while an IME is composing, stay in the field
-            if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
+            // Enter sends; Shift+Enter, and Enter while an IME is composing, stay in the field (Safari sends the
+            // Enter that ends a composition after compositionend, with isComposing false but keyCode 229)
+            if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing && e.keyCode !== 229) {
               e.preventDefault()
               submit()
             }
@@ -84,7 +89,7 @@ export function Composer({
           placeholder={busy ? "Answering… you can type the next question" : placeholder}
           autoComplete="off"
           spellCheck
-          className="as-input scrollbar-thin min-h-[40px] flex-1 resize-none py-[9px] text-[15px] leading-[22px] placeholder:text-faint"
+          className="as-input scrollbar-thin min-h-[40px] flex-1 resize-none disabled:opacity-50 py-[9px] text-[15px] leading-[22px] placeholder:text-faint"
         />
         {!focused && !value && !busy && (
           <kbd className="mb-2 hidden h-6 shrink-0 items-center rounded-[5px] border border-border-strong px-1.5 font-mono text-[11px] text-faint sm:inline-flex">

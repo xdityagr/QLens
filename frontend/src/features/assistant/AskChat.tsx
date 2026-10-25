@@ -77,22 +77,27 @@ export default function AskChat({ wsId, tables }: { wsId: number; tables: Schema
 
   // The open conversation lives in the URL (?c=12), so Back from "Open in SQL tab" and a reload return to it.
   const [params, setParams] = useSearchParams()
-  const restoring = useRef(true)
+  // read once, on arrival; after that the URL follows the conversation, not the other way round
+  const [restoreId] = useState(() => {
+    const c = Number(params.get("c"))
+    return Number.isInteger(c) && c > 0 ? c : null
+  })
+  // until the restore is back the page neither offers the empty state nor takes a question, which would
+  // start a new conversation that the restored thread then replaced
+  const [restoring, setRestoring] = useState(restoreId !== null)
   const { openConversation } = a
   useEffect(() => {
-    const c = Number(params.get("c"))
-    if (!Number.isInteger(c) || c <= 0) {
-      restoring.current = false
-      return
-    }
-    void openConversation(c).finally(() => {
-      restoring.current = false
+    if (restoreId === null) return
+    let live = true
+    void openConversation(restoreId).finally(() => {
+      if (live) setRestoring(false)
     })
-    // only on arrival; later changes go the other way
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
+    return () => {
+      live = false
+    }
+  }, [restoreId, openConversation])
   useEffect(() => {
-    if (restoring.current || a.loading) return
+    if (restoring || a.loading) return
     const want = a.conversationId === null ? null : String(a.conversationId)
     if (params.get("c") === want) return
     setParams(
@@ -104,7 +109,7 @@ export default function AskChat({ wsId, tables }: { wsId: number; tables: Schema
       },
       { replace: true },
     )
-  }, [a.conversationId, a.loading, params, setParams])
+  }, [restoring, a.conversationId, a.loading, params, setParams])
 
   const laneOf = useCallback((name: string) => tables.find((t) => t.name === name)?.color_index ?? null, [tables])
   const starters = useMemo(() => askStarters(tables), [tables])
@@ -162,7 +167,7 @@ export default function AskChat({ wsId, tables }: { wsId: number; tables: Schema
       toBottom(!reduced)
     }
   }, [a.pending, reduced, toBottom])
-  const empty = a.turns.length === 0 && a.pending === null && !a.loading
+  const empty = a.turns.length === 0 && a.pending === null && !a.loading && !restoring
   useLayoutEffect(() => {
     // an opened conversation starts at its latest answer; the empty page starts at its top
     atBottom.current = true
@@ -183,7 +188,7 @@ export default function AskChat({ wsId, tables }: { wsId: number; tables: Schema
 
   return (
     <div
-      className="relative flex h-[calc(100dvh-3.5rem-46px)] min-h-[420px] md:h-[calc(100dvh-3.5rem)]"
+      className="relative flex h-[calc(100dvh-var(--app-header-h)-var(--step-strip-h))] min-h-[420px]"
       onKeyDown={(e) => {
         if (e.key === "Escape" && drawer && !e.defaultPrevented) {
           e.preventDefault()
@@ -196,7 +201,7 @@ export default function AskChat({ wsId, tables }: { wsId: number; tables: Schema
         <button
           type="button"
           aria-label="Close the conversation list"
-          className="ask-scrim fixed inset-0 top-14 z-40 bg-[color-mix(in_oklab,var(--bg)_60%,transparent)] lg:hidden"
+          className="ask-scrim fixed inset-0 top-[var(--app-header-h)] z-40 bg-[color-mix(in_oklab,var(--bg)_60%,transparent)] lg:hidden"
           onClick={() => setDrawer(false)}
         />
       )}
@@ -253,7 +258,19 @@ export default function AskChat({ wsId, tables }: { wsId: number; tables: Schema
             <Hero tables={tables} starters={starters} busy={a.pending !== null} onAsk={send} />
           ) : (
             <div ref={content} className="mx-auto w-full max-w-[880px] px-4 pb-10 pt-8 sm:px-8">
-              <ThreadBody a={a} laneOf={laneOf} sqlAction={sqlAction} layout="page" empty={null} />
+              <ThreadBody
+                a={a}
+                laneOf={laneOf}
+                sqlAction={sqlAction}
+                layout="page"
+                empty={
+                  restoring ? (
+                    <div className="grid h-24 place-items-center text-muted">
+                      <Spinner size={16} />
+                    </div>
+                  ) : null
+                }
+              />
             </div>
           )}
         </div>
@@ -274,6 +291,7 @@ export default function AskChat({ wsId, tables }: { wsId: number; tables: Schema
               label={a.turns.length ? "Ask a follow-up" : "Ask a question about your data"}
               placeholder={a.turns.length ? "Ask a follow-up…" : "Ask a question about your tables…"}
               note={NOTE}
+              disabled={restoring}
             />
           </div>
         </div>

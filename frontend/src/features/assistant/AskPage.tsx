@@ -14,7 +14,7 @@ import { StepHeader } from "../workspaces/StepHeader"
 const AskChat = lazy(() => import("./AskChat"))
 
 const Centered = () => (
-  <div className="grid h-[calc(100dvh-3.5rem-46px)] place-items-center text-muted md:h-[calc(100dvh-3.5rem)]">
+  <div className="grid h-[calc(100dvh-var(--app-header-h)-var(--step-strip-h))] place-items-center text-muted">
     <Spinner size={20} />
   </div>
 )

@@ -62,8 +62,19 @@
 :root {
   --radius-card: 10px;
   --radius-control: 8px;
+  /* Chrome heights, border included: the top bar (TopBar) and, below md, the workspace's step strip
+     (WorkspaceLayout). Full-height screens subtract these instead of hard-coding numbers. */
+  --app-header-h: 3.5rem;
+  --step-strip-h: 3rem;
   --font-ui: "Space Grotesk Variable", "Space Grotesk", ui-sans-serif, system-ui, sans-serif;
   --font-code: "JetBrains Mono Variable", "JetBrains Mono", ui-monospace, "Cascadia Code", monospace;
   /* feTurbulence grain, tiled. Kept as a data URI so no request and no CDN. */
   --grain: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='220' height='220'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='3' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 0.5 0 0 0 0 0.5 0 0 0 0 0.5 0 0 0 1.6 -0.35'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+}
+
+/* md and up the steps are in the side rail, not a strip */
+@media (min-width: 48rem) {
+  :root {
+    --step-strip-h: 0px;
+  }
 }

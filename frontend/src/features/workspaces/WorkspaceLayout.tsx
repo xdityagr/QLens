@@ -55,12 +55,12 @@ export function WorkspaceLayout() {
         </span>
       </TopBar>
 
-      <div className="border-b border-border md:hidden">
+      <div className="flex h-[var(--step-strip-h)] items-center border-b border-border md:hidden">
         <StepRail workspaceId={ws.id} stage={ws.stage} orientation="horizontal" />
       </div>
 
       <div className="flex flex-1">
-        <aside className="sticky top-14 hidden h-[calc(100dvh-3.5rem)] w-[232px] shrink-0 flex-col border-r border-border px-3 py-5 md:flex">
+        <aside className="sticky top-[var(--app-header-h)] hidden h-[calc(100dvh-var(--app-header-h))] w-[232px] shrink-0 flex-col border-r border-border px-3 py-5 md:flex">
           <Link
             to="/"
             className="mb-5 flex h-8 items-center gap-2 rounded-control px-3 text-[13px] text-muted transition-colors hover:text-text"
