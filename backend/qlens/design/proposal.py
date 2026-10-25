@@ -181,10 +181,11 @@ def _keys(conn: psycopg.Connection, dataset_id: int) -> list[tuple[str, ...]]:
     return [tuple(r["cols"]) for r in rows]
 
 
-def build(conn: psycopg.Connection, dataset_id: int) -> ProposalOut:
+def build(conn: psycopg.Connection, dataset_id: int, based_on_id: int | None = None) -> ProposalOut:
     """Synthesize a fresh draft from the exact, accepted dependencies; it replaces the current draft.
 
-    An applied proposal stays applied (its tables still exist) until a newer one is applied."""
+    An applied proposal stays applied (its tables still exist) until a newer one is applied.
+    based_on_id: the version an undo should go back to (set when the assistant rebuilds)."""
     ds = conn.execute("SELECT original_filename, status FROM qlens.datasets WHERE id = %s", (dataset_id,)).fetchone()
     if ds is None:
         raise ApiError(404, "no_dataset", "This workspace has no dataset yet.")
@@ -202,8 +203,8 @@ def build(conn: psycopg.Connection, dataset_id: int) -> ProposalOut:
     with conn.transaction():
         conn.execute("UPDATE qlens.schema_proposals SET status = 'superseded' "
                      "WHERE dataset_id = %s AND status = 'draft'", (dataset_id,))
-        pid = conn.execute("INSERT INTO qlens.schema_proposals (dataset_id, status) VALUES (%s, 'draft') "
-                           "RETURNING id", (dataset_id,)).fetchone()["id"]
+        pid = conn.execute("INSERT INTO qlens.schema_proposals (dataset_id, status, based_on_id) "
+                           "VALUES (%s, 'draft', %s) RETURNING id", (dataset_id, based_on_id)).fetchone()["id"]
         table_ids = [conn.execute(
             "INSERT INTO qlens.proposed_tables (proposal_id, ordinal, name, kind, color_index, explanation) "
             "VALUES (%s, %s, %s, %s, %s, %s) RETURNING id",
@@ -292,6 +293,61 @@ def live_proposal(conn: psycopg.Connection, dataset_id: int) -> ProposalOut | No
     row = conn.execute("SELECT id FROM qlens.schema_proposals WHERE dataset_id = %s AND status <> 'superseded' "
                        "ORDER BY status = 'draft' DESC LIMIT 1", (dataset_id,)).fetchone()
     return None if row is None else get_proposal(conn, row["id"])
+
+
+# ---- versions (the assistant's edits and undo) ----------------------------------------------------
+
+def copy_as_draft(conn: psycopg.Connection, dataset_id: int, source_id: int, based_on_id: int | None) -> int:
+    """Copy proposal `source_id` (tables, columns, foreign keys, unique keys) into a new draft that replaces
+    the current one; the replaced draft stays as 'superseded' history. Returns the new draft's id.
+
+    The copy is done in SQL: each INSERT ... SELECT maps old ids to new ones through the (proposal, name)
+    and (table, name) uniqueness that both versions share."""
+    with conn.transaction():
+        conn.execute("UPDATE qlens.schema_proposals SET status = 'superseded' "
+                     "WHERE dataset_id = %s AND status = 'draft'", (dataset_id,))
+        new = conn.execute("INSERT INTO qlens.schema_proposals (dataset_id, status, based_on_id) "
+                           "VALUES (%s, 'draft', %s) RETURNING id", (dataset_id, based_on_id)).fetchone()["id"]
+        conn.execute(
+            "INSERT INTO qlens.proposed_tables (proposal_id, ordinal, name, kind, color_index, explanation) "
+            "SELECT %s, ordinal, name, kind, color_index, explanation FROM qlens.proposed_tables "
+            "WHERE proposal_id = %s", (new, source_id))
+        # Table ids of the two versions, paired by name.
+        pairs = ("SELECT o.id AS old_id, n.id AS new_id FROM qlens.proposed_tables o "
+                 "JOIN qlens.proposed_tables n ON n.proposal_id = %(new)s AND n.name = o.name "
+                 "WHERE o.proposal_id = %(src)s")
+        conn.execute(
+            f"WITH t AS ({pairs}) "
+            "INSERT INTO qlens.proposed_columns (table_id, ordinal, name, source_column_id, data_type, role, not_null, "
+            "                                    references_table_id) "
+            "SELECT t.new_id, c.ordinal, c.name, c.source_column_id, c.data_type, c.role, c.not_null, r.new_id "
+            "FROM qlens.proposed_columns c JOIN t ON t.old_id = c.table_id "
+            "LEFT JOIN t r ON r.old_id = c.references_table_id", {"new": new, "src": source_id})
+        keys = conn.execute(
+            f"WITH t AS ({pairs}) SELECT k.id, t.new_id, k.is_primary_natural FROM qlens.proposed_unique_keys k "
+            "JOIN t ON t.old_id = k.table_id ORDER BY k.id", {"new": new, "src": source_id}).fetchall()
+        for k in keys:
+            kid = conn.execute("INSERT INTO qlens.proposed_unique_keys (table_id, is_primary_natural) "
+                               "VALUES (%s, %s) RETURNING id", (k["new_id"], k["is_primary_natural"])).fetchone()["id"]
+            conn.execute(
+                "INSERT INTO qlens.proposed_unique_key_columns (key_id, column_id) "
+                "SELECT %s, n.id FROM qlens.proposed_unique_key_columns kc "
+                "JOIN qlens.proposed_columns o ON o.id = kc.column_id "
+                "JOIN qlens.proposed_columns n ON n.table_id = %s AND n.name = o.name WHERE kc.key_id = %s",
+                (kid, k["new_id"], k["id"]))
+    return new
+
+
+def edit_applied(conn: psycopg.Connection, dataset_id: int) -> ProposalOut:
+    """Start a new draft from the applied design, keeping its names (a fresh build would lose renames)."""
+    rows = conn.execute("SELECT id, status FROM qlens.schema_proposals WHERE dataset_id = %s "
+                        "AND status IN ('draft', 'applied')", (dataset_id,)).fetchall()
+    by_status = {r["status"]: r["id"] for r in rows}
+    if "draft" in by_status:
+        raise ApiError(409, "draft_exists", "There is already a draft design; edit that one.")
+    if "applied" not in by_status:
+        raise ApiError(404, "no_applied_proposal", "No design has been applied yet.")
+    return get_proposal(conn, copy_as_draft(conn, dataset_id, by_status["applied"], based_on_id=by_status["applied"]))
 
 
 # ---- renames --------------------------------------------------------------------------------------

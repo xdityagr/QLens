@@ -46,6 +46,11 @@ def build(conn: db.Conn, ws: WorkspaceRow = Depends(owned_workspace)) -> Proposa
     return proposal.build(conn, _dataset_id(conn, ws))
 
 
+@router.post("/proposal/edit-applied")
+def edit_applied(conn: db.Conn, ws: WorkspaceRow = Depends(owned_workspace)) -> ProposalOut:
+    return proposal.edit_applied(conn, _dataset_id(conn, ws))
+
+
 @router.get("/proposal")
 def get(conn: db.Conn, ws: WorkspaceRow = Depends(owned_workspace)) -> ProposalOut:
     return _live(conn, ws)

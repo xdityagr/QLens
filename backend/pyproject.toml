@@ -13,6 +13,7 @@ dependencies = [
     "pydantic-settings",
     "anthropic",
     "python-multipart",
+    "google-genai>=2.33.0",
 ]
 
 [dependency-groups]
