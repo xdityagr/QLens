@@ -153,6 +153,8 @@ export interface ProposalOut {
   id: number
   status: ProposalStatus
   lossless_ok: boolean | null
+  /** a table or column was renamed (here or in the version it was copied from); Rebuild would lose that */
+  has_renames: boolean
   source_columns: string[]
   tables: TableOut[]
 }

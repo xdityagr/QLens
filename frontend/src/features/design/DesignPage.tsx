@@ -147,6 +147,12 @@ function Design({
   const dataChanges = useDataChanges(wsId, queryable && !applied)
   const editedRows = dataChanges.data?.edited_rows ?? 0
   const [confirmApply, setConfirmApply] = useState(false)
+  const [confirmRebuild, setConfirmRebuild] = useState(false)
+  const rebuild = () => {
+    setConfirmRebuild(false)
+    build.mutate(undefined, { onSuccess: () => apply.reset() })
+  }
+
   const startApply = () => {
     setConfirmApply(false)
     setPanelOpenState(true) // the progress and the result live in the panel
@@ -216,7 +222,7 @@ function Design({
         icon={<RotateCw size={15} />}
         loading={build.isPending}
         disabled={busy}
-        onClick={() => build.mutate(undefined, { onSuccess: () => apply.reset() })}
+        onClick={() => (p.has_renames ? setConfirmRebuild(true) : rebuild())}
         title="Build the draft again from the dependencies accepted in Analyze. Renames are discarded."
       >
         Rebuild
@@ -354,6 +360,21 @@ function Design({
           </Button>
           <Button variant="danger" onClick={startApply}>
             Apply and discard edits
+          </Button>
+        </div>
+      </Dialog>
+      <Dialog
+        open={confirmRebuild}
+        onClose={() => setConfirmRebuild(false)}
+        title="Discard your renames?"
+        description="Rebuilding synthesizes the draft again from the dependencies accepted in Analyze, with the default table and column names. The renames in this draft are lost."
+      >
+        <div className="flex justify-end gap-2">
+          <Button variant="ghost" onClick={() => setConfirmRebuild(false)}>
+            Keep this draft
+          </Button>
+          <Button variant="danger" onClick={rebuild}>
+            Rebuild and discard renames
           </Button>
         </div>
       </Dialog>

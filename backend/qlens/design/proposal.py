@@ -49,6 +49,8 @@ class ProposalOut(BaseModel):
     id: int
     status: Literal["draft", "applied", "superseded"]
     lossless_ok: bool | None
+    # A table or column was renamed (here or in the version it was copied from); a rebuild would lose that.
+    has_renames: bool
     # Every column of the original sheet, in sheet order (what original_sheet must give back).
     source_columns: list[str]
     tables: list[TableOut]
@@ -230,7 +232,8 @@ def build(conn: psycopg.Connection, dataset_id: int, based_on_id: int | None = N
 # ---- read -----------------------------------------------------------------------------------------
 
 def get_proposal(conn: psycopg.Connection, proposal_id: int) -> ProposalOut:
-    p = conn.execute("SELECT id, dataset_id, status, lossless_ok FROM qlens.schema_proposals WHERE id = %s",
+    p = conn.execute("SELECT id, dataset_id, status, lossless_ok, has_renames FROM qlens.schema_proposals "
+                     "WHERE id = %s",
                      (proposal_id,)).fetchone()
     tables = conn.execute("SELECT id, name, kind, color_index, explanation FROM qlens.proposed_tables "
                           "WHERE proposal_id = %s ORDER BY ordinal", (proposal_id,)).fetchall()
@@ -281,7 +284,8 @@ def get_proposal(conn: psycopg.Connection, proposal_id: int) -> ProposalOut:
                 [label_of[n] for n in keys_of[t["id"]][0]] if keys_of[t["id"]] else [],
                 [name_of[c["references_table_id"]] for c in cols_of[t["id"]] if c["role"] == "fk"])
     return ProposalOut(
-        id=p["id"], status=p["status"], lossless_ok=p["lossless_ok"], source_columns=source_columns,
+        id=p["id"], status=p["status"], lossless_ok=p["lossless_ok"], has_renames=p["has_renames"],
+        source_columns=source_columns,
         tables=[TableOut(**t, unique_keys=keys_of[t["id"]],
                          columns=[ProposedColumnOut(**{k: v for k, v in c.items() if k != "table_id"})
                                   for c in cols_of[t["id"]]])
@@ -306,8 +310,9 @@ def copy_as_draft(conn: psycopg.Connection, dataset_id: int, source_id: int, bas
     with conn.transaction():
         conn.execute("UPDATE qlens.schema_proposals SET status = 'superseded' "
                      "WHERE dataset_id = %s AND status = 'draft'", (dataset_id,))
-        new = conn.execute("INSERT INTO qlens.schema_proposals (dataset_id, status, based_on_id) "
-                           "VALUES (%s, 'draft', %s) RETURNING id", (dataset_id, based_on_id)).fetchone()["id"]
+        new = conn.execute("INSERT INTO qlens.schema_proposals (dataset_id, status, based_on_id, has_renames) "
+                           "SELECT %s, 'draft', %s, has_renames FROM qlens.schema_proposals WHERE id = %s "
+                           "RETURNING id", (dataset_id, based_on_id, source_id)).fetchone()["id"]
         conn.execute(
             "INSERT INTO qlens.proposed_tables (proposal_id, ordinal, name, kind, color_index, explanation) "
             "SELECT %s, ordinal, name, kind, color_index, explanation FROM qlens.proposed_tables "
@@ -379,6 +384,7 @@ def rename_table(conn: psycopg.Connection, dataset_id: int, table_id: int, name:
     if clash is not None or name == VIEW_NAME:
         raise ApiError(409, "name_taken", f"There is already a table called {name}.")
     conn.execute("UPDATE qlens.proposed_tables SET name = %s WHERE id = %s", (name, table_id))
+    conn.execute("UPDATE qlens.schema_proposals SET has_renames = true WHERE id = %s", (t["proposal_id"],))
     return get_proposal(conn, t["proposal_id"])
 
 
@@ -400,4 +406,5 @@ def rename_column(conn: psycopg.Connection, dataset_id: int, column_id: int, nam
     if clash is not None:
         raise ApiError(409, "name_taken", f"This table already has a column called {name}.")
     conn.execute("UPDATE qlens.proposed_columns SET name = %s WHERE id = %s", (name, column_id))
+    conn.execute("UPDATE qlens.schema_proposals SET has_renames = true WHERE id = %s", (c["proposal_id"],))
     return get_proposal(conn, c["proposal_id"])

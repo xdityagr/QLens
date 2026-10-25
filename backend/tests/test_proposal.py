@@ -348,6 +348,24 @@ def test_rename_validation(client, fee_ws_clean):
     assert client.patch(f"{base}/columns/999999", json={"name": "x"}).status_code == 404
 
 
+def test_has_renames_tracks_renames_through_copies_and_builds(client, conn, fee_ws_clean):
+    # The Design screen asks before a Rebuild only when it would throw renames away.
+    client.post("/api/auth/login", json=FIXTURE_LOGIN)
+    base = f"/api/workspaces/{fee_ws_clean.id}/proposal"
+    p = client.post(base).json()
+    assert p["has_renames"] is False
+    students = next(t for t in p["tables"] if t["name"] == "students")
+    renamed = client.patch(f"{base}/tables/{students['id']}", json={"name": "learners"}).json()
+    assert renamed["has_renames"] is True
+    col = next(c for c in students["columns"] if c["role"] == "attribute")
+    assert client.patch(f"{base}/columns/{col['id']}", json={"name": "full_name"}).json()["has_renames"] is True
+    conn.execute("UPDATE qlens.schema_proposals SET status = 'applied', lossless_ok = true WHERE id = %s", (p["id"],))
+    conn.commit()
+    # A draft copied from the renamed applied design still holds those renames.
+    assert client.post(f"{base}/edit-applied").json()["has_renames"] is True
+    assert client.post(base).json()["has_renames"] is False
+
+
 def test_pk_column_cannot_be_renamed(client, fee_ws_clean):
     # The Data page, the audit trigger and Browse address rows by `id`; renaming it would break them.
     client.post("/api/auth/login", json=FIXTURE_LOGIN)
