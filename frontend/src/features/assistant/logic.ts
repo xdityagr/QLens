@@ -172,19 +172,18 @@ export function editSummary(actions: AssistantAction[], changes: DesignChange[] 
 
 // ---- errors -----------------------------------------------------------------------------------
 
+export const RATE_LIMITED =
+  "Gemini's free quota is used up for now — try again later (the daily limit resets at midnight Pacific time)."
+
 export function friendlyError(e: unknown): FriendlyError {
   if (e instanceof ApiError) {
     if (e.code === "assistant_rate_limited")
-      return { kind: "rate", title: "Rate-limited", message: "The assistant is rate-limited, try again in a minute." }
+      return { kind: "rate", title: "Rate-limited", message: RATE_LIMITED }
     if (e.code === "nothing_to_undo") return { kind: "other", title: "Nothing to undo", message: e.message }
     if (e.code === "assistant_upstream_error") {
       const detail = typeof e.detail === "string" ? e.detail : JSON.stringify(e.detail ?? "")
       if (/\b429\b|RESOURCE_EXHAUSTED|quota|rate.?limit/i.test(detail))
-        return {
-          kind: "rate",
-          title: "Rate-limited",
-          message: "The assistant is rate-limited, try again in a minute.",
-        }
+        return { kind: "rate", title: "Rate-limited", message: RATE_LIMITED }
       // The server may not say why (it keeps Gemini's own error text to itself); on the free tier the
       // usual reason is the per-minute quota, so say that, as the likely cause.
       return {

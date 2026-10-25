@@ -126,7 +126,7 @@ export function DesignAssistant({
         laneOf={laneOf}
         sqlAction={sqlAction}
         footer={bar("docked")}
-        intro="Ask why a column sits in a table or whether one column decides another, or tell me what to change: rename a table, stop using a dependency, undo."
+        intro="Ask why a column sits in a table or whether one column decides another, or tell me what to change: rename a table, stop using a dependency, undo. Questions, your table structure and up to 50 result rows are sent to Google Gemini."
       />
     </>
   )

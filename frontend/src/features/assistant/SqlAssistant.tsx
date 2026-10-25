@@ -30,8 +30,8 @@ export interface SqlAssistantProps {
 
 const INTRO: Record<SqlAssistantProps["context"], string> = {
   query:
-    "Ask about the rows in your tables. I can write a SELECT, run it read-only and show what came back; Insert into editor puts the SQL in the editor as a new query.",
-  data: "Ask about the rows in your tables in plain English. The assistant writes one SELECT, runs it as this workspace's read-only database role, and answers with the rows and the SQL it used. It never changes your data. Open in SQL tab puts the SQL in the editor.",
+    "Ask about the rows in your tables. I can write a SELECT, run it read-only and show what came back; Insert into editor puts the SQL in the editor as a new query. Questions, your table structure and up to 50 result rows are sent to Google Gemini.",
+  data: "Ask about the rows in your tables in plain English. The assistant writes one SELECT, runs it in a read-only transaction, and answers with the rows and the SQL it used. It never changes your data. Open in SQL tab puts the SQL in the editor. Questions, your table structure and up to 50 result rows are sent to Google Gemini.",
 }
 
 /**

@@ -10,6 +10,7 @@ import {
   friendlyError,
   presentationFor,
   querySuggestions,
+  RATE_LIMITED,
   threadFromDetail,
   typewriterCuts,
 } from "./logic"
@@ -136,7 +137,7 @@ describe("friendlyError", () => {
     )
     expect(friendlyError(e)).toMatchObject({
       kind: "rate",
-      message: "The assistant is rate-limited, try again in a minute.",
+      message: RATE_LIMITED,
     })
   })
   it("keeps other upstream errors distinct", () => {
@@ -333,7 +334,7 @@ describe("friendlyError, round 2 codes", () => {
   it("reads the backend's 429 assistant_rate_limited", () => {
     expect(friendlyError(new ApiError(429, "assistant_rate_limited", "x"))).toMatchObject({
       kind: "rate",
-      message: "The assistant is rate-limited, try again in a minute.",
+      message: RATE_LIMITED,
     })
   })
   it("says plainly when there is nothing to undo", () => {
