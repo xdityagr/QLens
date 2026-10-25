@@ -1,4 +1,4 @@
-Samples/
+/Samples/
 *.docx
 .env
 .env.*

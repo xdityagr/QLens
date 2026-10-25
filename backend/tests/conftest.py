@@ -1,13 +1,17 @@
+from dataclasses import dataclass
+
 import psycopg
 from psycopg import sql
 import pytest
 from fastapi.testclient import TestClient
 from psycopg.rows import dict_row
 
+from qlens.auth import service as auth_service
 from qlens.config import get_settings
 from qlens.db import get_conn
 from qlens.main import app
 from qlens.migrate import apply_migrations
+from qlens.workspaces.service import create_workspace
 
 TEST_ROLE_PREFIX = "qlenstest_ws_"
 
@@ -79,3 +83,50 @@ def second_client(client):
     # Independent cookie jar (a different user). Not entered with `with`: the lifespan already ran for
     # `client`, and the get_conn override it installs applies to every TestClient of the app.
     return TestClient(app)
+
+
+# ---- workspace and sample-dataset fixtures --------------------------------------------------------
+
+@dataclass
+class WsHandle:
+    id: int
+    dataset_id: int | None = None
+
+
+@pytest.fixture
+def workspace(conn, monkeypatch) -> int:
+    """A user plus workspace built through the service layer on the test connection.
+
+    Committed, so other connections (the sandbox role, a TestClient) can see it; the `conn` fixture
+    wipes every workspace schema, role and metadata row at the start of the next test.
+    """
+    monkeypatch.setattr(get_settings(), "role_prefix", TEST_ROLE_PREFIX)
+    user = auth_service.signup(conn, auth_service.SignupIn(
+        email="fixture@example.com", password="fixture-password", display_name="Fixture"))
+    ws = create_workspace(conn, user.id, "Fixture workspace")
+    conn.commit()
+    return ws.id
+
+
+def _with_sample(conn, ws_id: int, name: str) -> WsHandle:
+    from qlens.ingest.stage import import_dataset
+    from qlens.samples.generate import generate
+
+    ds = import_dataset(conn, ws_id, *generate(name), source="sample")
+    conn.commit()
+    return WsHandle(id=ws_id, dataset_id=ds.id)
+
+
+@pytest.fixture
+def fee_ws(conn, workspace) -> WsHandle:
+    return _with_sample(conn, workspace, "fee_register")
+
+
+@pytest.fixture
+def kirana_ws(conn, workspace) -> WsHandle:
+    return _with_sample(conn, workspace, "kirana_sales")
+
+
+@pytest.fixture
+def hostel_ws(conn, workspace) -> WsHandle:
+    return _with_sample(conn, workspace, "hostel_mess")

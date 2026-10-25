@@ -5,6 +5,7 @@ from fastapi import APIRouter, FastAPI
 from qlens import db
 from qlens.auth.routes import router as auth_router
 from qlens.errors import install_error_handlers
+from qlens.ingest.routes import router as ingest_router
 from qlens.workspaces.routes import router as workspaces_router
 
 
@@ -31,4 +32,5 @@ def health(conn: db.Conn) -> dict:
 
 router.include_router(auth_router)
 router.include_router(workspaces_router)
+router.include_router(ingest_router)
 app.include_router(router)
