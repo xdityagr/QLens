@@ -178,7 +178,7 @@ def suggest(conn: psycopg.Connection, ws_id: int, plan: PlanOut,
             big = outer if _rows(outer) >= _rows(inner) else inner
             joined = _rows(node)
             if (big.get("Node Type") not in _SEQ_SCANS or big.get("Relation Name") not in tables
-                    or _rows(big) == 0 or joined > SELECTIVE * _rows(big)):
+                    or _read(big) == 0 or joined > SELECTIVE * _read(big)):
                 continue
             columns = _filter_columns(node["Hash Cond"], _names(big))
             if columns:

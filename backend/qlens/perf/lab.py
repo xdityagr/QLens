@@ -26,6 +26,7 @@ from qlens.query.validate import validate_select
 
 MIN_FACTOR, MAX_FACTOR = 2, 200
 MAX_FACT_ROWS = 500_000
+MAX_RUNS = 10
 _SCALE_COMMENT = re.compile(r"scale_factor=(\d+)")
 
 
@@ -167,7 +168,10 @@ def scale(conn: psycopg.Connection, ws_id: int, factor: int) -> LabOut:
     if not MIN_FACTOR <= factor <= MAX_FACTOR:
         raise ApiError(422, "invalid_factor", f"Choose a scale factor from {MIN_FACTOR} to {MAX_FACTOR}.")
     ensure_lab(conn, ws_id)
-    fact = next(t["name"] for t in _applied_tables(conn, ws_id) if t["kind"] == "fact")
+    _lock(conn, ws_id)  # again: ensure_lab commits (releasing it) when it builds the lab
+    fact = next((t["name"] for t in _applied_tables(conn, ws_id) if t["kind"] == "fact"), None)
+    if fact is None:
+        raise ApiError(409, "no_fact_table", "The applied design has no fact table to scale.")
     lab = _lab(ws_id)
     table = sql.Identifier(lab, fact)
     rows = conn.execute(sql.SQL("SELECT count(*) AS n FROM {}").format(table)).fetchone()["n"]
@@ -200,16 +204,18 @@ def _timed(ws_id: int, sql_text: str, runs: int) -> tuple[float, PlanOut]:
 
 def try_index(conn: psycopg.Connection, ws_id: int, sql_text: str, table: str, columns: list[str],
               runs: int = 5) -> ExperimentOut:
-    """Time the query, create the index in the lab, time it again. Commits `conn` (the sandbox must see the index;
-    until then the lock taken by ensure_lab keeps a second experiment on the workspace waiting).
+    """Time the query, create the index in the lab, time it again, and record the experiment.
 
-    Raises ApiError for bad input and sandbox.QueryError when the query itself fails; a failure after the index
-    was made drops it again.
+    Commits `conn`: the sandbox must see the index. The workspace lock is held from the checks until the index is
+    committed, so a second experiment on the same workspace waits and then finds the index. Raises ApiError for bad
+    input and sandbox.QueryError when the query itself fails; any failure after the index was made drops it again.
     """
     sql_text = validate_select(sql_text)
     if not 1 <= len(columns) <= advisor.MAX_COLUMNS or len(set(columns)) != len(columns):
         raise ApiError(422, "invalid_columns", f"Index 1 to {advisor.MAX_COLUMNS} different columns.")
+    runs = max(1, min(int(runs), MAX_RUNS))
     ensure_lab(conn, ws_id)
+    _lock(conn, ws_id)  # again: ensure_lab commits (releasing it) when it builds the lab
     found = next((t for t in catalog.describe(conn, ws_id, "lab").tables if t["name"] == table), None)
     if found is None:
         raise ApiError(422, "unknown_table", "The lab has no table of that name.")
@@ -239,16 +245,19 @@ def try_index(conn: psycopg.Connection, ws_id: int, sql_text: str, table: str, c
     conn.commit()
     try:
         after_ms, after_plan = _timed(ws_id, sql_text, runs)
+        row = conn.execute(
+            f"INSERT INTO qlens.index_experiments (workspace_id, table_name, columns, index_name, ddl, before_ms, "
+            f"after_ms, runs, status) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, 'kept') RETURNING {_EXP_COLS}",
+            (ws_id, table, columns, name, ddl, round(before_ms, 3), round(after_ms, 3), runs)).fetchone()
+        out = ExperimentOut(**row, before_plan=before_plan, after_plan=after_plan)
+        conn.commit()  # the index is committed already; its experiment row goes with it
     except BaseException:
+        # No index may stay behind without its experiment: it would block this experiment until a reset.
         conn.rollback()
         conn.execute(sql.SQL("DROP INDEX IF EXISTS {}").format(sql.Identifier(_lab(ws_id), name)))
         conn.commit()
         raise
-    row = conn.execute(
-        f"INSERT INTO qlens.index_experiments (workspace_id, table_name, columns, index_name, ddl, before_ms, "
-        f"after_ms, runs, status) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, 'kept') RETURNING {_EXP_COLS}",
-        (ws_id, table, columns, name, ddl, round(before_ms, 3), round(after_ms, 3), runs)).fetchone()
-    return ExperimentOut(**row, before_plan=before_plan, after_plan=after_plan)
+    return out
 
 
 def list_experiments(conn: psycopg.Connection, ws_id: int) -> list[ExperimentRow]:
@@ -263,10 +272,12 @@ def list_experiments(conn: psycopg.Connection, ws_id: int) -> list[ExperimentRow
 
 def drop_index(conn: psycopg.Connection, ws_id: int, experiment_id: int) -> ExperimentRow:
     _lock(conn, ws_id)
-    row = conn.execute("SELECT index_name FROM qlens.index_experiments WHERE id = %s AND workspace_id = %s",
+    row = conn.execute(f"SELECT {_EXP_COLS} FROM qlens.index_experiments WHERE id = %s AND workspace_id = %s",
                        (experiment_id, ws_id)).fetchone()
     if row is None:
         raise ApiError(404, "experiment_not_found", "Experiment not found.")
+    if row["status"] == "dropped":
+        return ExperimentRow(**row)  # its index is gone; a newer index may carry the same name now
     conn.execute(sql.SQL("DROP INDEX IF EXISTS {}").format(sql.Identifier(_lab(ws_id), row["index_name"])))
     return ExperimentRow(**conn.execute(
         f"UPDATE qlens.index_experiments SET status = 'dropped' WHERE id = %s RETURNING {_EXP_COLS}",

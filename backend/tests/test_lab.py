@@ -107,6 +107,49 @@ def test_reset_marks_kept_experiments_dropped(conn, applied_fee_scaled):
     assert [r.status for r in list_experiments(conn, applied_fee_scaled.id)] == ["dropped"]
 
 
+def _lab_indexes(conn, ws_id: int) -> list[str]:
+    fee = next(t for t in status(conn, ws_id).tables if t["name"] == "fee_register")
+    return [i["name"] for i in fee["indexes"]]
+
+
+def test_try_index_failure_leaves_no_index(conn, applied_fee, monkeypatch: pytest.MonkeyPatch):
+    import psycopg
+
+    from qlens.perf import lab
+
+    # Recording the experiment fails after the index was made and committed: the index must go again.
+    # A context of its own: undoing the fixtures' patches too would point the sandbox at the dev database.
+    with monkeypatch.context() as m, pytest.raises(psycopg.errors.UndefinedColumn):
+        m.setattr(lab, "_EXP_COLS", "no_such_column")
+        try_index(conn, applied_fee.id, QUERY, "fee_register", ["student_id"], runs=1)
+    assert _lab_indexes(conn, applied_fee.id) == ["fee_register_pkey"]
+    assert conn.execute("SELECT count(*) AS n FROM qlens.index_experiments").fetchone()["n"] == 0
+    # So the same experiment can simply be run again.
+    assert try_index(conn, applied_fee.id, QUERY, "fee_register", ["student_id"], runs=1).status == "kept"
+
+
+def test_drop_twice_keeps_a_newer_index_of_the_same_name(conn, applied_fee):
+    first = try_index(conn, applied_fee.id, QUERY, "fee_register", ["student_id"], runs=1)
+    drop_index(conn, applied_fee.id, first.id)
+    conn.commit()  # as the request would: the uncommitted DROP INDEX locks the table the sandbox times
+    second = try_index(conn, applied_fee.id, QUERY, "fee_register", ["student_id"], runs=1)
+    assert second.index_name == first.index_name
+    assert drop_index(conn, applied_fee.id, first.id).status == "dropped"
+    assert first.index_name in _lab_indexes(conn, applied_fee.id)
+
+
+def test_try_index_runs_are_clamped(conn, applied_fee):
+    assert try_index(conn, applied_fee.id, QUERY, "fee_register", ["student_id"], runs=50).runs == 10
+    assert try_index(conn, applied_fee.id, QUERY, "fee_register", ["month"], runs=0).runs == 1
+
+
+def test_scale_needs_a_fact_table(conn, applied_fee):
+    conn.execute("UPDATE qlens.proposed_tables SET kind = 'entity'")
+    with pytest.raises(ApiError) as e:
+        scale(conn, applied_fee.id, 2)
+    assert e.value.status == 409 and e.value.code == "no_fact_table"
+
+
 def test_try_index_validates_names(conn, applied_fee):
     for table, cols, code in (("nope", ["id"], "unknown_table"), ("fee_register", ["nope"], "unknown_column")):
         with pytest.raises(ApiError) as e:
