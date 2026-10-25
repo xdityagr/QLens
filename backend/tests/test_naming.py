@@ -49,7 +49,7 @@ def test_unique_name():
 
 @pytest.mark.parametrize("name,ok", [
     ("learners", True), ("Bad Name", False), ("_hidden", False), ("1st", False), ("a" * 63, True),
-    ("a" * 64, False), ("group", True), ("", False),
+    ("a" * 64, False), ("group", True), ("", False), ("abc\n", False), ("learners\n", False),
 ])
 def test_valid_identifier(name, ok):
     assert valid_identifier(name) is ok

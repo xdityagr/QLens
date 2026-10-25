@@ -322,7 +322,7 @@ def test_rename_validation(client, fee_ws_clean):
     students = next(t for t in p["tables"] if t["name"] == "students")
     url = f"{base}/tables/{students['id']}"
 
-    for bad in ("Bad Name", "_staging", "1st", "a" * 64):
+    for bad in ("Bad Name", "_staging", "1st", "a" * 64, "learners\n"):
         r = client.patch(url, json={"name": bad})
         assert r.status_code == 422 and r.json()["error"]["code"] == "invalid_identifier", bad
     for taken in ("teachers", "original_sheet"):
@@ -335,7 +335,9 @@ def test_rename_validation(client, fee_ws_clean):
 
     col = students["columns"][1]
     col_url = f"{base}/columns/{col['id']}"
-    assert client.patch(col_url, json={"name": "Full Name"}).json()["error"]["code"] == "invalid_identifier"
+    for bad in ("Full Name", "full_name\n"):
+        r = client.patch(col_url, json={"name": bad})
+        assert r.status_code == 422 and r.json()["error"]["code"] == "invalid_identifier", bad
     r = client.patch(col_url, json={"name": "student_phone"})
     assert r.status_code == 409 and r.json()["error"]["code"] == "name_taken"
     r = client.patch(col_url, json={"name": "full_name"})

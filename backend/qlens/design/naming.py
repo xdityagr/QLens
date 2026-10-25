@@ -4,7 +4,8 @@ import unicodedata
 from collections.abc import Collection, Sequence
 
 MAX_IDENT = 63
-IDENTIFIER = re.compile(r"^[a-z_][a-z0-9_]{0,62}$")
+# Used with fullmatch: `$` would also accept a trailing newline, which the database CHECK rejects.
+IDENTIFIER = re.compile(r"[a-z_][a-z0-9_]{0,62}")
 
 # "student_name" names a student, "bill_no" a bill: the suffix says which attribute, not which thing.
 _SUFFIX = re.compile(r"_(name|id|code|no|number)$")
@@ -12,7 +13,7 @@ _SUFFIX = re.compile(r"_(name|id|code|no|number)$")
 
 def valid_identifier(name: str) -> bool:
     """A name the user may give a table or column. A leading `_` is reserved (`_staging`, `_raw`, `_row_id`)."""
-    return bool(IDENTIFIER.match(name)) and not name.startswith("_")
+    return bool(IDENTIFIER.fullmatch(name)) and not name.startswith("_")
 
 
 def pluralize(word: str) -> str:
