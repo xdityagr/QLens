@@ -7,10 +7,13 @@ from qlens.analysis.routes import router as analysis_router
 from qlens.assistant.routes import router as assistant_router
 from qlens.auth.routes import router as auth_router
 from qlens.config import get_settings
+from qlens.data.routes import router as data_router
 from qlens.design.routes import router as design_router
 from qlens.errors import install_error_handlers
 from qlens.ingest.routes import router as ingest_router
+from qlens.perf.routes import router as perf_router
 from qlens.query.routes import router as query_router
+from qlens.stepthrough.routes import router as stepthrough_router
 from qlens.workspaces.routes import router as workspaces_router
 
 
@@ -50,4 +53,7 @@ router.include_router(analysis_router)
 router.include_router(design_router)
 router.include_router(query_router)
 router.include_router(assistant_router)
+router.include_router(data_router)
+router.include_router(perf_router)
+router.include_router(stepthrough_router)
 app.include_router(router)
