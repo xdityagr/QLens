@@ -6,18 +6,18 @@ const states = (stage: Parameters<typeof stepStates>[0]) =>
 
 test("empty workspace starts at import, everything else locked", () => {
   expect(states("empty")).toEqual([
-    "import:current", "analyze:locked", "design:locked", "query:locked", "perf:locked", "history:locked",
+    "import:current", "analyze:locked", "design:locked", "data:locked", "query:locked", "perf:locked", "history:locked",
   ])
 })
 
 test("analyzed workspace moves on to design", () => {
   expect(states("analyzed")).toEqual([
-    "import:done", "analyze:done", "design:current", "query:locked", "perf:locked", "history:locked",
+    "import:done", "analyze:done", "design:current", "data:locked", "query:locked", "perf:locked", "history:locked",
   ])
 })
 
-test("applied workspace opens query, performance and history", () => {
+test("applied workspace opens data, query, performance and history; query is next", () => {
   expect(states("applied")).toEqual([
-    "import:done", "analyze:done", "design:done", "query:current", "perf:open", "history:open",
+    "import:done", "analyze:done", "design:done", "data:open", "query:current", "perf:open", "history:open",
   ])
 })

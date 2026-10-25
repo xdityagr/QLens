@@ -1,0 +1,152 @@
+/* Data screen. Motion is transform/opacity only; globals.css shortens it to nothing under reduced motion. */
+
+/* a row added in this session settles in from just above */
+@keyframes dc-row-in {
+  from {
+    opacity: 0;
+    transform: translateY(-6px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+.dc-row-in {
+  animation: dc-row-in 320ms cubic-bezier(0.2, 0.7, 0.2, 1) both;
+}
+
+/* a deleted row slides out and fades before the page refetches */
+@keyframes dc-row-out {
+  to {
+    opacity: 0;
+    transform: translateX(16px) scaleY(0.6);
+  }
+}
+.dc-row-out {
+  transform-origin: top;
+  animation: dc-row-out 260ms cubic-bezier(0.4, 0, 1, 1) forwards;
+  pointer-events: none;
+}
+
+/* a cell that just changed glows once in the accent and fades back */
+@keyframes dc-flash {
+  from {
+    opacity: 1;
+  }
+  to {
+    opacity: 0;
+  }
+}
+.dc-flash {
+  position: relative;
+}
+.dc-flash::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: color-mix(in oklab, var(--accent) 22%, transparent);
+  animation: dc-flash 1400ms cubic-bezier(0.3, 0, 0.3, 1) forwards;
+  pointer-events: none;
+}
+
+/* The refused-write card: drops in, nudges sideways once (the database said no), and its stripe draws down. */
+@keyframes dc-card-in {
+  0% {
+    opacity: 0;
+    transform: translateY(-6px) scale(0.985);
+  }
+  45% {
+    opacity: 1;
+    transform: translateX(0);
+  }
+  60% {
+    transform: translateX(-5px);
+  }
+  75% {
+    transform: translateX(4px);
+  }
+  88% {
+    transform: translateX(-2px);
+  }
+  100% {
+    opacity: 1;
+    transform: none;
+  }
+}
+.dc-card {
+  animation: dc-card-in 460ms cubic-bezier(0.2, 0.7, 0.2, 1) both;
+}
+@keyframes dc-stripe {
+  from {
+    transform: scaleY(0);
+  }
+  to {
+    transform: none;
+  }
+}
+.dc-stripe {
+  transform-origin: top;
+  animation: dc-stripe 360ms 120ms cubic-bezier(0.2, 0.7, 0.2, 1) both;
+}
+
+/* the side drawer slides in from the right edge */
+@keyframes dc-drawer-in {
+  from {
+    opacity: 0.4;
+    transform: translateX(32px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+.dc-drawer[open] {
+  animation: dc-drawer-in 260ms cubic-bezier(0.2, 0.7, 0.2, 1);
+}
+.dc-drawer::backdrop {
+  background: color-mix(in oklab, var(--bg) 62%, transparent);
+  backdrop-filter: blur(1.5px);
+}
+
+/* a new audit entry grows in at the top of the timeline */
+@keyframes dc-log-in {
+  from {
+    opacity: 0;
+    transform: translateY(-8px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+.dc-log-in {
+  animation: dc-log-in 340ms cubic-bezier(0.2, 0.7, 0.2, 1) both;
+}
+@keyframes dc-node-ping {
+  from {
+    opacity: 0.7;
+    transform: scale(1);
+  }
+  to {
+    opacity: 0;
+    transform: scale(2.6);
+  }
+}
+.dc-node-ping {
+  animation: dc-node-ping 900ms 200ms cubic-bezier(0.2, 0.7, 0.2, 1) both;
+}
+
+/* the listbox of a foreign-key picker */
+@keyframes dc-pop {
+  from {
+    opacity: 0;
+    transform: translateY(-3px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+.dc-pop {
+  animation: dc-pop 140ms ease-out both;
+}

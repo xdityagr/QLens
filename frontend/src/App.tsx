@@ -4,6 +4,7 @@ import { FullPageSpinner } from "./components/Spinner"
 import { LoginPage } from "./features/auth/LoginPage"
 import { SignupPage } from "./features/auth/SignupPage"
 import { AnalyzePage } from "./features/analyze/AnalyzePage"
+import { DataPage } from "./features/data/DataPage"
 import { DesignPage } from "./features/design/DesignPage"
 import { useMe } from "./features/auth/useAuth"
 import { HistoryPage } from "./features/history/HistoryPage"
@@ -17,7 +18,7 @@ import { ApiError } from "./lib/api"
 import { STEPS, type StepKey } from "./lib/steps"
 
 // Steps with a real screen; the rest still get StepPlaceholder.
-const BUILT = new Set<StepKey>(["import", "analyze", "design", "query", "history"])
+const BUILT = new Set<StepKey>(["import", "analyze", "design", "data", "query", "history"])
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -58,6 +59,7 @@ export default function App() {
               <Route path="import" element={<ImportPage />} />
               <Route path="analyze" element={<AnalyzePage />} />
               <Route path="design" element={<DesignPage />} />
+              <Route path="data" element={<DataPage />} />
               <Route path="query" element={<QueryPage />} />
               <Route path="history" element={<HistoryPage />} />
               {STEPS.filter((s) => !BUILT.has(s.key)).map((s) => (
