@@ -364,3 +364,159 @@ def test_cleanup_routes_guard(client, second_client, api_ws):
 def test_module_surface():
     assert {"find_duplicates", "inconsistencies", "merge_group", "dismiss_group", "fix_fd", "accept_all",
             "list_fixes"} <= set(dir(cleanup))
+
+
+# ---- fix_fd / merge_group edge cases ----------------------------------------------------------------
+
+def csv_ds(conn, ws_id, header, rows):
+    body = "\n".join([header] + [",".join(r) for r in rows]).encode("utf-8")
+    import_dataset(conn, ws_id, "t.csv", body, "upload")
+    return ds_of(conn, ws_id)
+
+
+def fd_of(a, lhs, rhs):
+    return next(f for f in a.fds if f.lhs == lhs and f.rhs == rhs)
+
+
+def snapshot(conn, ws_id, ds):
+    """Everything a failed edit must leave alone."""
+    return (conn.execute(f"SELECT * FROM {src(conn, ws_id)} ORDER BY _row_id").fetchall(),
+            conn.execute("SELECT * FROM qlens.dataset_fixes ORDER BY id").fetchall(),
+            conn.execute("SELECT name, null_count, distinct_count, sample_values FROM qlens.dataset_columns "
+                         "WHERE dataset_id = %s ORDER BY ordinal", (ds,)).fetchall(),
+            conn.execute("SELECT id, canonical_value, status FROM qlens.duplicate_groups ORDER BY id").fetchall())
+
+
+def pair_table(conn, ws_id):
+    """(a, b) -> c over 12 groups of 5 rows; a is NULL in three of them; one row of group (NULL, q) is wrong."""
+    rows = []
+    for a in ("x", "y", "z", ""):
+        for b in ("p", "q", "r"):
+            for i in range(5):
+                c = f"{a or 'nil'}-{b}"
+                if (a, b, i) == ("", "q", 0):
+                    c = "oops"
+                rows.append((a, b, c, str(len(rows))))
+    return csv_ds(conn, ws_id, "A,B,C,N", rows)
+
+
+def test_fix_fd_with_null_in_lhs_touches_only_the_conflicting_group(conn, workspace):
+    ds = pair_table(conn, workspace)
+    a = analyze(conn, ds)
+    assert conn.execute("SELECT null_count FROM qlens.dataset_columns WHERE dataset_id = %s AND name = 'a'",
+                        (ds,)).fetchone()["null_count"] == 15
+    fd = fd_of(a, ["a", "b"], "c")
+    assert not fd.is_exact and fd.violating_rows == 1
+    inc = next(i for i in inconsistencies(conn, ds) if i.fd_id == fd.id)
+    assert [c.lhs_values for c in inc.conflicts] == [[None, "q"]]
+    before = conn.execute(f"SELECT _row_id, c FROM {src(conn, workspace)} ORDER BY _row_id").fetchall()
+
+    assert fix_fd(conn, ds, fd.id, None) == 1
+
+    after = conn.execute(f"SELECT _row_id, c FROM {src(conn, workspace)} ORDER BY _row_id").fetchall()
+    changed = [(b["_row_id"], b["c"], x["c"]) for b, x in zip(before, after) if b["c"] != x["c"]]
+    assert changed == [(changed[0][0], "oops", "nil-q")]
+    assert next(f for f in analyze(conn, ds).fds if f.lhs == ["a", "b"] and f.rhs == "c").is_exact
+
+
+def test_fix_fd_override_in_json_stringify_form(conn, workspace):
+    ds = pair_table(conn, workspace)
+    fd = fd_of(analyze(conn, ds), ["a", "b"], "c")
+    # JS JSON.stringify: no space after the comma. The group's own key is '[null, "q"]'.
+    assert fix_fd(conn, ds, fd.id, {'[null,"q"]': "oops"}) == 4
+    c = conn.execute(f"SELECT DISTINCT c FROM {src(conn, workspace)} WHERE a IS NULL AND b = 'q'").fetchall()
+    assert [r["c"] for r in c] == ["oops"]
+
+
+def test_fix_fd_override_with_raw_non_ascii_key(conn, workspace):
+    rows = [(k, "typo" if (k == "José" and i == 0) else f"v-{k}", str(n))
+            for n, (k, i) in enumerate((k, i) for k in ("José", "Zoë", "Anna", "Ben") for i in range(50))]
+    ds = csv_ds(conn, workspace, "Name,Val,N", rows)
+    fd = fd_of(analyze(conn, ds), ["name"], "val")
+    assert fix_fd(conn, ds, fd.id, {'["José"]': "typo"}) == 49          # raw é, not é
+    vals = {r["val"] for r in conn.execute(f"SELECT val FROM {src(conn, workspace)} WHERE name = 'José'")}
+    assert vals == {"typo"}
+
+
+def null_rhs_table(conn, ws_id):
+    """k -> v over 40 groups of 5. k01: one NULL among five (minority). k02: four NULL and one value."""
+    rows = []
+    for g in range(1, 41):
+        for i in range(5):
+            v = f"v{g:02d}"
+            if g == 1 and i == 0:
+                v = ""
+            if g == 2 and i != 0:
+                v = ""
+            rows.append((f"k{g:02d}", v, str(len(rows))))
+    return csv_ds(conn, ws_id, "K,V,N", rows)
+
+
+def test_fix_fd_with_null_rhs_variants(conn, workspace):
+    ds = null_rhs_table(conn, workspace)
+    a = analyze(conn, ds)
+    fd = fd_of(a, ["k"], "v")
+    inc = next(i for i in inconsistencies(conn, ds) if i.fd_id == fd.id)
+    by_key = {c.lhs_values[0]: c for c in inc.conflicts}
+    assert {(v.value, v.rows) for v in by_key["k01"].variants} == {("v01", 4), (None, 1)}
+    assert by_key["k01"].suggested == "v01"
+    assert {(v.value, v.rows) for v in by_key["k02"].variants} == {("v02", 1), (None, 4)}
+    assert by_key["k02"].suggested is None                       # NULL is the majority value
+
+    assert fix_fd(conn, ds, fd.id, None) == 2
+    rows = conn.execute(f"SELECT k, v FROM {src(conn, workspace)} WHERE k IN ('k01', 'k02')").fetchall()
+    assert {r["v"] for r in rows if r["k"] == "k01"} == {"v01"}
+    assert {r["v"] for r in rows if r["k"] == "k02"} == {None}
+    logged = {(f["from_value"], f["to_value"], f["rows_affected"]) for f in conn.execute(
+        "SELECT from_value, to_value, rows_affected FROM qlens.dataset_fixes")}
+    assert logged == {(None, "v01", 1), ("v02", None, 1)}
+    col = conn.execute("SELECT null_count FROM qlens.dataset_columns WHERE dataset_id = %s AND name = 'v'",
+                       (ds,)).fetchone()
+    assert col["null_count"] == 5                                # profile follows the edit (was 1 + 4)
+
+
+def test_fix_fd_bad_override_value_changes_nothing(conn, kirana_ws):
+    ds = kirana_ws.dataset_id
+    fd = fd_of(analyze(conn, ds), ["item"], "unit_price")
+    conflict = next(i for i in inconsistencies(conn, ds) if i.fd_id == fd.id).conflicts[0]
+    before = snapshot(conn, kirana_ws.id, ds)
+    with pytest.raises(ApiError) as e:
+        fix_fd(conn, ds, fd.id, {json.dumps(conflict.lhs_values): "not a price"})
+    assert e.value.status == 422 and e.value.code == "invalid_override_value"
+    assert snapshot(conn, kirana_ws.id, ds) == before
+    # the connection is still usable and the untouched dependency can be fixed afterwards
+    assert fix_fd(conn, ds, fd.id, None) == 3
+
+
+def test_fix_fd_rejects_unknown_and_malformed_override_keys(conn, fee_ws):
+    ds = fee_ws.dataset_id
+    fd = fd_of(analyze(conn, ds), ["teacher"], "teacher_phone")
+    before = snapshot(conn, fee_ws.id, ds)
+    for key, code in (('["Nobody"]', "unknown_override"), ("not json", "invalid_override"),
+                      ('["Mr. Gupta", "extra"]', "unknown_override")):
+        with pytest.raises(ApiError) as e:
+            fix_fd(conn, ds, fd.id, {key: "+91 90000 00000"})
+        assert e.value.status == 422 and e.value.code == code
+    assert snapshot(conn, fee_ws.id, ds) == before
+    # a valid key next to an unknown one: nothing is written either
+    with pytest.raises(ApiError):
+        fix_fd(conn, ds, fd.id, {'["Mr. Gupta"]': "+91 90000 00000", '["Nobody"]': "x"})
+    assert snapshot(conn, fee_ws.id, ds) == before
+
+
+def test_failed_merge_changes_nothing(conn, fee_ws):
+    ds = fee_ws.dataset_id
+    g = group_of(analyze(conn, ds), "Riya Sharma")
+    before = snapshot(conn, fee_ws.id, ds)
+    with pytest.raises(ApiError) as e:
+        merge_group(conn, ds, g.id, "Somebody Else")
+    assert e.value.code == "bad_canonical"
+    assert snapshot(conn, fee_ws.id, ds) == before
+
+
+def test_route_fix_with_bad_override(client, api_ws):
+    base = f"/api/workspaces/{api_ws}"
+    inc = next(i for i in client.get(f"{base}/analysis").json()["inconsistencies"] if i["lhs"] == ["teacher"])
+    r = client.post(f"{base}/inconsistencies/{inc['fd_id']}/fix", json={"overrides": {'["Nobody"]': "x"}})
+    assert r.status_code == 422 and r.json()["error"]["code"] == "unknown_override"
+    assert client.get(f"{base}/fixes").json() == []

@@ -323,20 +323,35 @@ def fix_fd(conn: psycopg.Connection, dataset_id: int, fd_id: int, overrides: dic
     cols = {c["name"]: c for c in conn.execute(
         "SELECT id, name, inferred_type FROM qlens.dataset_columns WHERE dataset_id = %s", (dataset_id,))}
     rhs_type = _PG_TYPE[cols[fd.rhs]["inferred_type"]]
-    overrides = overrides or {}
+    conflicts = _conflicts(conn, ds["workspace_id"], fd.lhs, fd.rhs)
+    # Keys are compared in json.dumps form, so a client's JSON.stringify spelling (no space after the comma,
+    # raw non-ASCII) still finds its group. A key that finds nothing is an error, never a silent fallback.
+    chosen: dict[str, str] = {}
+    for key, value in (overrides or {}).items():
+        try:
+            chosen[json.dumps(json.loads(key))] = value
+        except ValueError:
+            raise ApiError(422, "invalid_override", f"Override key {key!r} is not valid JSON.") from None
+    known = {json.dumps(c.lhs_values) for c in conflicts}
+    if unknown := [k for k in chosen if k not in known]:
+        raise ApiError(422, "unknown_override", "No conflicting group matches the override key.", unknown)
     log: dict[tuple[str | None, str | None], int] = {}
-    with conn.transaction():
-        for conflict in _conflicts(conn, ds["workspace_id"], fd.lhs, fd.rhs):
-            target = overrides.get(json.dumps(conflict.lhs_values), conflict.suggested)
-            where = sql.SQL(" AND ").join(
-                sql.SQL("{} IS NOT DISTINCT FROM CAST(%s AS {})").format(
-                    sql.Identifier(c), sql.SQL(_PG_TYPE[cols[c]["inferred_type"]])) for c in fd.lhs)
-            for old, rows in _rewrite(conn, ds["workspace_id"], fd.rhs, rhs_type, where,
-                                      list(conflict.lhs_values), target).items():
-                log[(old, target)] = log.get((old, target), 0) + rows
-        for (old, new), rows in log.items():
-            _log_fix(conn, dataset_id, "fd_fix", cols[fd.rhs]["id"], old, new, rows)
-        refresh_column_profile(conn, ds["workspace_id"], dataset_id, [fd.rhs])
+    try:
+        with conn.transaction():
+            for conflict in conflicts:
+                target = chosen.get(json.dumps(conflict.lhs_values), conflict.suggested)
+                where = sql.SQL(" AND ").join(
+                    sql.SQL("{} IS NOT DISTINCT FROM CAST(%s AS {})").format(
+                        sql.Identifier(c), sql.SQL(_PG_TYPE[cols[c]["inferred_type"]])) for c in fd.lhs)
+                for old, rows in _rewrite(conn, ds["workspace_id"], fd.rhs, rhs_type, where,
+                                          list(conflict.lhs_values), target).items():
+                    log[(old, target)] = log.get((old, target), 0) + rows
+            for (old, new), rows in log.items():
+                _log_fix(conn, dataset_id, "fd_fix", cols[fd.rhs]["id"], old, new, rows)
+            refresh_column_profile(conn, ds["workspace_id"], dataset_id, [fd.rhs])
+    except psycopg.DataError:
+        # The block above rolled back, so nothing was written.
+        raise ApiError(422, "invalid_override_value", f"An override value is not a valid {fd.rhs} value.") from None
     return sum(log.values())
 
 
