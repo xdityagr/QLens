@@ -385,13 +385,16 @@ def rename_table(conn: psycopg.Connection, dataset_id: int, table_id: int, name:
 def rename_column(conn: psycopg.Connection, dataset_id: int, column_id: int, name: str) -> ProposalOut:
     _check_identifier(name)
     c = conn.execute(
-        "SELECT c.id, c.table_id, t.proposal_id, p.status FROM qlens.proposed_columns c "
+        "SELECT c.id, c.table_id, c.role, t.proposal_id, p.status FROM qlens.proposed_columns c "
         "JOIN qlens.proposed_tables t ON t.id = c.table_id JOIN qlens.schema_proposals p ON p.id = t.proposal_id "
         "WHERE c.id = %s AND p.dataset_id = %s FOR UPDATE OF c",
         (column_id, dataset_id)).fetchone()
     if c is None:
         raise ApiError(404, "column_not_found", "Column not found.")
     _check_draft(c["status"])
+    # The Data page, its audit trigger and Browse address rows by `id`.
+    if c["role"] == "pk":
+        raise ApiError(422, "pk_rename_not_allowed", "The id column is the surrogate primary key and keeps its name.")
     clash = conn.execute("SELECT 1 FROM qlens.proposed_columns WHERE table_id = %s AND name = %s AND id <> %s",
                          (c["table_id"], name, column_id)).fetchone()
     if clash is not None:

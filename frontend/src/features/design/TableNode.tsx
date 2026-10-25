@@ -12,6 +12,7 @@ const HANDLE_STYLE: CSSProperties = { opacity: 0, width: 6, height: 6, minWidth:
 /**
  * One proposed table: lane stripe, name, then its columns in mono with key and link markers.
  * Double-click a name to rename it (drafts only); errors from the server show right under it.
+ * The surrogate key `id` is never renamable: the Data page, its audit trigger and Browse address rows by it.
  */
 export function TableNode({ data }: NodeProps<ErNode>) {
   const { table } = data
@@ -80,6 +81,7 @@ function ColumnRow({ table, column: c }: { table: TableOut; column: ProposedColu
         target={{ kind: "column", id: c.id }}
         label={`column ${c.name}`}
         className={"font-mono text-[12.5px] " + (c.role === "attribute" ? "text-text" : "text-muted")}
+        readOnlyReason={c.role === "pk" ? PK_READ_ONLY : undefined}
         hint={
           c.source_label === null
             ? undefined
@@ -116,6 +118,9 @@ function ColumnRow({ table, column: c }: { table: TableOut; column: ProposedColu
   )
 }
 
+export const PK_READ_ONLY =
+  "The id column is the surrogate primary key and keeps its name: the Data page and its audit log find rows by id."
+
 function uniqueTitle(name: string, keys: string[][]): string {
   const together = keys.find((k) => k.length > 1)
   if (keys.some((k) => k.length === 1)) return "Unique: no two rows share this value"
@@ -128,6 +133,7 @@ function EditableName({
   label,
   className,
   hint,
+  readOnlyReason,
 }: {
   value: string
   target: RenameTarget
@@ -135,6 +141,8 @@ function EditableName({
   className: string
   /** where it came from in the sheet, shown on hover */
   hint?: string
+  /** set for a name that can never be renamed; shown on hover instead of the rename hint */
+  readOnlyReason?: string
 }) {
   const er = useEr()
   const [editing, setEditing] = useState(false)
@@ -153,7 +161,7 @@ function EditableName({
   }, [error])
 
   function start() {
-    if (!er.editable) return
+    if (!er.editable || readOnlyReason) return
     setDraft(value)
     setError(null)
     setEditing(true)
@@ -214,6 +222,13 @@ function EditableName({
             {error}
           </span>
         )}
+      </span>
+    )
+
+  if (readOnlyReason)
+    return (
+      <span className={`min-w-0 truncate px-0.5 ${className}`} title={readOnlyReason} data-readonly="pk">
+        {value}
       </span>
     )
 

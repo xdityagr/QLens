@@ -348,6 +348,19 @@ def test_rename_validation(client, fee_ws_clean):
     assert client.patch(f"{base}/columns/999999", json={"name": "x"}).status_code == 404
 
 
+def test_pk_column_cannot_be_renamed(client, fee_ws_clean):
+    # The Data page, the audit trigger and Browse address rows by `id`; renaming it would break them.
+    client.post("/api/auth/login", json=FIXTURE_LOGIN)
+    base = f"/api/workspaces/{fee_ws_clean.id}/proposal"
+    p = client.post(base).json()
+    students = next(t for t in p["tables"] if t["name"] == "students")
+    pk = next(c for c in students["columns"] if c["role"] == "pk")
+    r = client.patch(f"{base}/columns/{pk['id']}", json={"name": "student_id"})
+    assert r.status_code == 422 and r.json()["error"]["code"] == "pk_rename_not_allowed"
+    assert r.json()["error"]["message"] == "The id column is the surrogate primary key and keeps its name."
+    assert client.get(base).json() == p
+
+
 def test_explanations_follow_renames(client, fee_ws_clean):
     client.post("/api/auth/login", json=FIXTURE_LOGIN)
     base = f"/api/workspaces/{fee_ws_clean.id}/proposal"

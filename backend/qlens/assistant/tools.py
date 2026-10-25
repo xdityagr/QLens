@@ -356,6 +356,12 @@ def rename_column(ctx: ToolContext, a: RenameColumnArgs) -> tuple[dict, str]:
             f"Renamed {t.name}.{c.name} to {a.new_name}")
 
 
+def _record_fd_flips(ctx: ToolContext, proposal_id: int) -> None:
+    # Recorded on the version this message made, so undoing it can put the flags back.
+    ctx.conn.execute("UPDATE qlens.schema_proposals SET fd_changes = %s WHERE id = %s",
+                     (Jsonb({str(k): v for k, v in ctx.fd_flips.items()}), proposal_id))
+
+
 def set_dependency_accepted(ctx: ToolContext, a: AcceptArgs) -> tuple[dict, str]:
     ds = _dataset(ctx)
     cols = _columns(ctx, ds["id"])
@@ -369,9 +375,7 @@ def set_dependency_accepted(ctx: ToolContext, a: AcceptArgs) -> tuple[dict, str]
                      (a.accepted, fd.id, ds["id"]))
     ctx.fd_flips.setdefault(fd.id, fd.accepted)
     p = _rebuild(ctx, ds["id"])
-    # Recorded on the version this message made, so undoing it can put the flags back.
-    ctx.conn.execute("UPDATE qlens.schema_proposals SET fd_changes = %s WHERE id = %s",
-                     (Jsonb({str(k): v for k, v in ctx.fd_flips.items()}), p.id))
+    _record_fd_flips(ctx, p.id)
     out: dict[str, Any] = {"dependency": {"lhs": lhs, "rhs": rhs, "accepted": a.accepted, "exact": fd.is_exact}}
     if not a.accepted:
         # Other accepted dependencies can still imply it (batch -> teacher_phone -> teacher), in which case
@@ -389,6 +393,9 @@ def set_dependency_accepted(ctx: ToolContext, a: AcceptArgs) -> tuple[dict, str]
 
 def rebuild_design(ctx: ToolContext, _: NoArgs) -> tuple[dict, str]:
     p = _rebuild(ctx, _dataset(ctx)["id"])
+    if ctx.fd_flips:
+        # A flip earlier in this message is part of the same undo step; the new draft must carry it.
+        _record_fd_flips(ctx, p.id)
     return {"design": _proposal_brief(p)}, "Rebuilt the design from the accepted dependencies"
 
 
@@ -437,8 +444,8 @@ TOOLS: dict[str, Tool] = {t.name: t for t in [
     Tool("explain_query", "Show PostgreSQL's plan for a SELECT on the applied tables (EXPLAIN, not run).",
          SqlArgs, explain_query),
     Tool("rename_table", "Rename a table of the draft design.", RenameTableArgs, rename_table, edit=True),
-    Tool("rename_column", "Rename a column of a table in the draft design.", RenameColumnArgs, rename_column,
-         edit=True),
+    Tool("rename_column", "Rename a column of a table in the draft design (not the id primary key).",
+         RenameColumnArgs, rename_column, edit=True),
     Tool("set_dependency_accepted", "Stop (accepted=false) or resume (true) using a dependency found in the data, "
          "then rebuild the draft design from the accepted ones.", AcceptArgs, set_dependency_accepted, edit=True),
     Tool("rebuild_design", "Rebuild the draft design from the accepted dependencies (drops renames).", NoArgs,

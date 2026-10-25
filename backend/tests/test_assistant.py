@@ -224,6 +224,23 @@ def test_rename_errors(client, draft_ws, use_model, args, code):
     assert body["actions"][0]["ok"] is False and seen["error"]["code"] == code
 
 
+def test_renaming_the_primary_key_is_reported_to_the_model(client, conn, draft_ws, use_model):
+    seen = {}
+
+    def explain(history):
+        seen.update(last_tool_response(history))
+        return say("The id column keeps its name.")
+
+    use_model(FakeModel(call("rename_column", table="students", column="id", new_name="student_id"), explain))
+    body = ask(client, draft_ws.id, "rename students.id to student_id")
+    assert body["intent"] == "answer" and body["actions"][0]["ok"] is False
+    assert seen["error"]["code"] == "pk_rename_not_allowed"
+    assert "surrogate primary key" in seen["error"]["message"]
+    conn.rollback()
+    students = next(t for t in live_proposal(conn, draft_ws.dataset_id).tables if t.name == "students")
+    assert students.columns[0].name == "id"
+
+
 FD_ACCEPTED = ("SELECT f.accepted FROM qlens.functional_dependencies f "
                "JOIN qlens.dataset_columns r ON r.id = f.rhs_column_id "
                "JOIN qlens.fd_lhs_columns l ON l.fd_id = f.id JOIN qlens.dataset_columns lc ON lc.id = l.column_id "
@@ -294,6 +311,20 @@ def test_rebuild_design_drops_renames(client, draft_ws, use_model):
                         call("rebuild_design"), say("Rebuilt.")))
     body = ask(client, draft_ws.id, "rename then rebuild")
     assert table_names(body["proposal"]) == ["students", "batches", "teachers", "fee_register"]
+
+
+def test_rebuild_after_a_flip_in_the_same_message_keeps_the_flip_for_undo(client, conn, draft_ws, use_model):
+    use_model(FakeModel(call("set_dependency_accepted", lhs=["batch"], rhs="teacher", accepted=False),
+                        call("rebuild_design"), say("Rebuilt.")))
+    ask(client, draft_ws.id, "stop using batch -> teacher, then rebuild")
+    conn.rollback()
+    assert conn.execute(FD_ACCEPTED).fetchone()["accepted"] is False
+    draft = conn.execute("SELECT fd_changes FROM qlens.schema_proposals WHERE dataset_id = %s AND status = 'draft'",
+                         (draft_ws.dataset_id,)).fetchone()
+    assert list(draft["fd_changes"].values()) == [True]
+    assert client.post(f"/api/workspaces/{draft_ws.id}/assistant/undo").status_code == 200
+    conn.rollback()
+    assert conn.execute(FD_ACCEPTED).fetchone()["accepted"] is True
 
 
 def test_edit_on_applied_only_workspace_copies_the_applied_design(client, conn, applied_fee, use_model):
