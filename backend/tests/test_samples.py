@@ -85,16 +85,19 @@ def test_fee_register_structure_guarantees():
     assert len(teacher_phones) == 7 and not teacher_phones & set(by_phone)
 
     fee_by_family = {"JEE": 4000, "NEET": 3500, "Foundation": 2500}
-    unpaid = 0
+    unpaid = partial = 0
     for r in rows:
         if r["Fee Paid"] == "0":
             unpaid += 1
             assert r["Payment Mode"] == ""
         else:
             family = next(f for f in fee_by_family if r["Batch"].startswith(f))
-            assert int(r["Fee Paid"]) == fee_by_family[family]
+            full = fee_by_family[family]
+            assert int(r["Fee Paid"]) in {full, full // 2, full * 3 // 5, full * 3 // 4}
+            partial += int(r["Fee Paid"]) != full
             assert r["Payment Mode"] in {"Cash", "UPI", "Card"}
     assert 0.05 < unpaid / 3000 < 0.11
+    assert 0.10 < partial / (3000 - unpaid) < 0.20
 
 
 def test_kirana_shape_and_plants():

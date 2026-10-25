@@ -18,7 +18,9 @@ fee_register.csv  (3000 rows = 300 students x 10 months)
     Each teacher's phone is constant except Mr. Gupta's old number, which appears in exactly 5 rows
     (the first five April rows of his batches).
   * Fee Paid depends on the batch family (JEE 4000, NEET 3500, Foundation 2500); about 8% of rows are
-    unpaid with Fee Paid 0 and an empty Payment Mode. Phones are written "+91 98765 43210" so they are
+    unpaid with Fee Paid 0 and an empty Payment Mode, and about 15% of the paid rows are partial
+    payments (50%, 60% or 75% of the fee) with the Payment Mode drawn per row. Partial payments are
+    spread at random so no pair of columns other than a key determines Fee Paid. Phones are written "+91 98765 43210" so they are
     inferred as text, not numbers.
 
 kirana_sales.csv  (600 bills, 1-6 distinct items each)
@@ -87,6 +89,8 @@ _TEACHER_PHONE = {"Mr. Gupta": "+91 98100 11001", "Ms. Iyer": "+91 98100 22002",
                   "Mr. Khan": "+91 98100 44004", "Ms. Das": "+91 98100 55005", "Mr. Nair": "+91 98100 66006"}
 _GUPTA_OLD_PHONE = "+91 98100 99009"
 _FEE = {"JEE": 4000, "NEET": 3500, "Foundation": 2500}
+_PARTIAL_SHARE = 0.15
+_PARTIAL_FRACTIONS = [(1, 2), (3, 5), (3, 4)]
 _MONTHS = ["Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec", "Jan"]
 
 
@@ -117,6 +121,9 @@ def _fee_register(rng: random.Random):
                 fee, mode = 0, ""
             else:
                 fee, mode = _FEE[family], rng.choice(["Cash", "UPI", "Card"])
+                if rng.random() < _PARTIAL_SHARE:
+                    num, den = rng.choice(_PARTIAL_FRACTIONS)
+                    fee = fee * num // den
             rows.append([shown, phone, batch, teacher, tphone, month, fee, mode])
     assert gupta_old_left == 0 and len(rows) == 3000
     return header, rows

@@ -113,6 +113,58 @@ def test_fee_register_is_fast(conn, fee_ws):
     assert elapsed < 5
 
 
+def core_fds(a):
+    """The non-derived FDs: what the analysis page shows by default."""
+    return {(tuple(f.lhs), f.rhs, f.is_exact, f.violating_rows) for f in a.fds if not f.is_derived}
+
+
+# Dependencies whose LHS contains a candidate key are not listed (a key determines everything), so
+# e.g. (student_name, month) -> fee_paid does not appear; the synthesis gets the keys separately.
+def test_fee_register_core_fds(conn, fee_ws):
+    a = analyze(conn, fee_ws.dataset_id)
+    assert core_fds(a) == {
+        (("student_name",), "student_phone", True, 0),
+        (("student_phone",), "student_name", False, 8),
+        (("student_phone",), "batch", True, 0),
+        (("batch",), "teacher", True, 0),
+        (("teacher",), "teacher_phone", False, 5),
+        (("teacher_phone",), "teacher", True, 0),
+    }
+    derived = {(tuple(f.lhs), f.rhs) for f in a.fds if f.is_derived}
+    assert derived == {(("student_name",), "batch"), (("student_name",), "teacher"),
+                       (("student_phone",), "teacher")}
+    assert not any(not f.is_exact and f.is_derived for f in a.fds)
+    # fee_paid and payment_mode are determined by the keys only
+    assert not any(f.rhs in ("fee_paid", "payment_mode") for f in a.fds)
+
+
+def test_kirana_core_fds(conn, kirana_ws):
+    a = analyze(conn, kirana_ws.dataset_id)
+    assert a.keys == [["bill_no", "item"]]
+    assert core_fds(a) == {
+        (("bill_no",), "date", True, 0),
+        (("bill_no",), "customer_phone", True, 0),
+        (("customer",), "customer_phone", True, 0),
+        (("customer_phone",), "customer", False, 3),      # 'Mohan lal'
+        (("item",), "category", True, 0),
+        (("item",), "unit_price", False, 3),               # Toor Dal's old price
+    }
+
+
+def test_hostel_core_fds(conn, hostel_ws):
+    a = analyze(conn, hostel_ws.dataset_id)
+    # room is a plain integer column named "room", so it is treated as a measure and cannot be a
+    # determinant; student -> room / hostel_block carry the same information.
+    assert core_fds(a) == {
+        (("student",), "room", True, 0),
+        (("student",), "hostel_block", True, 0),
+        (("hostel_block",), "warden", False, 2),           # 'Mrs Rao'
+        (("warden",), "hostel_block", True, 0),
+        (("menu_item",), "meal", True, 0),
+        (("date", "meal"), "menu_item", True, 0),
+    }
+
+
 # ---- routes ---------------------------------------------------------------------------------------
 
 @pytest.fixture
@@ -132,7 +184,7 @@ def test_routes_flow(client, api_ws):
     assert set(body) == {"dataset_id", "row_count", "keys", "fds", "duplicates", "inconsistencies"}
     assert body["duplicates"] == [] and body["inconsistencies"] == []
     assert set(body["fds"][0]) == {"id", "lhs", "rhs", "is_exact", "violating_rows", "violation_ratio",
-                                   "accepted", "sentence"}
+                                   "accepted", "is_derived", "sentence"}
     assert client.get(f"/api/workspaces/{api_ws}/analysis").json() == body
 
 
@@ -165,3 +217,19 @@ def test_analyze_without_dataset(client):
     ws_id = client.post("/api/workspaces", json={"name": "Empty"}).json()["id"]
     r = client.post(f"/api/workspaces/{ws_id}/analyze")
     assert r.status_code == 404 and r.json()["error"]["code"] == "no_dataset"
+
+
+def test_derived_follows_acceptance(client, api_ws):
+    def derived(fds):
+        return {(tuple(f["lhs"]), f["rhs"]): f["is_derived"] for f in fds}
+
+    fds = client.post(f"/api/workspaces/{api_ws}/analyze").json()["fds"]
+    assert derived(fds)[(("student_phone",), "teacher")] is True
+    assert derived(fds)[(("batch",), "teacher")] is False
+    assert derived(fds)[(("teacher",), "teacher_phone")] is False          # approximate: never derived
+    batch_teacher = next(f["id"] for f in fds if f["lhs"] == ["batch"] and f["rhs"] == "teacher")
+    client.patch(f"/api/workspaces/{api_ws}/fds/{batch_teacher}", json={"accepted": False})
+    after = client.get(f"/api/workspaces/{api_ws}/analysis").json()["fds"]
+    # without batch -> teacher, student_phone -> teacher is no longer implied by the others
+    assert derived(after)[(("student_phone",), "teacher")] is False
+    assert derived(after)[(("batch",), "teacher")] is False         # rejected FDs are never "derived"

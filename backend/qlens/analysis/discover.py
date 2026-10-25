@@ -8,7 +8,7 @@ import psycopg
 from pydantic import BaseModel
 
 from qlens import db
-from qlens.analysis.fd_algebra import FD
+from qlens.analysis.fd_algebra import FD, minimal_cover
 from qlens.errors import ApiError
 from qlens.ingest.stage import ColumnOut
 
@@ -27,6 +27,8 @@ class FDOut(BaseModel):
     violating_rows: int
     violation_ratio: float
     accepted: bool
+    # Exact, accepted and implied by the other exact accepted FDs (not part of the minimal cover).
+    is_derived: bool
     sentence: str
 
 
@@ -95,30 +97,59 @@ def _find_keys(conn: psycopg.Connection, schema: str, row_count: int,
 
 def _find_fds(conn: psycopg.Connection, schema: str, cols: list[ColumnOut], eligible: list[ColumnOut],
               keys: list[tuple[str, ...]]) -> list[dict]:
-    """Dicts with lhs (names), rhs (name) and the check_fd measures, in discovery order."""
+    """Dicts with lhs (names), rhs (name) and the check_fd measures."""
     key_sets = [set(k) for k in keys]
     non_constant = [c for c in cols if c.distinct_count > 1]
-    lhs_list: list[tuple[ColumnOut, ...]] = [(c,) for c in eligible]
-    if len(eligible) <= LEVEL2_MAX_ELIGIBLE:
-        lhs_list += list(itertools.combinations(eligible, 2))
+    ordinal = {c.name: c.ordinal for c in cols}
 
-    found: list[dict] = []
-    exact_single: set[tuple[str, str]] = set()      # (lhs column, rhs) with an exact one-column FD
-    for lhs in lhs_list:                            # size-1 LHS come first, so exact_single is complete
-        names = [c.name for c in lhs]
-        if any(k <= set(names) for k in key_sets):
+    def check(names: list[str], rhs: str) -> dict | None:
+        m = conn.execute("SELECT * FROM qlens.check_fd(%s, '_staging', %s, %s)", (schema, names, rhs)).fetchone()
+        if m["repeated_groups"] >= 2 and m["violating_rows"] <= APPROX_THRESHOLD * m["row_count"]:
+            return {"lhs": names, "rhs": rhs, **m}
+        return None
+
+    # Level 1: every candidate, before any suppression (the later rules compare against all of them).
+    singles: dict[tuple[str, str], dict] = {}
+    for c in eligible:
+        if any(k <= {c.name} for k in key_sets):
             continue                                # a key determines everything; nothing to learn
         for rhs in non_constant:
-            if rhs.name in names:
+            if rhs.name != c.name and (fd := check([c.name], rhs.name)):
+                singles[(c.name, rhs.name)] = fd
+    exact_single = {k for k, fd in singles.items() if fd["violating_rows"] == 0}
+
+    found: list[dict] = []
+    # Level 2.
+    if len(eligible) <= LEVEL2_MAX_ELIGIBLE:
+        for pair in itertools.combinations(eligible, 2):
+            names = [c.name for c in pair]
+            if any(k <= set(names) for k in key_sets):
                 continue
-            if len(lhs) == 2 and any((n, rhs.name) in exact_single for n in names):
-                continue                            # already determined by part of the LHS
-            m = conn.execute("SELECT * FROM qlens.check_fd(%s, '_staging', %s, %s)",
-                             (schema, names, rhs.name)).fetchone()
-            if m["repeated_groups"] >= 2 and m["violating_rows"] <= APPROX_THRESHOLD * m["row_count"]:
-                found.append({"lhs": names, "rhs": rhs.name, **m})
-                if len(lhs) == 1 and m["violating_rows"] == 0:
-                    exact_single.add((names[0], rhs.name))
+            for rhs in non_constant:
+                if rhs.name in names or any((n, rhs.name) in exact_single for n in names):
+                    continue                        # already determined exactly by part of the LHS
+                fd = check(names, rhs.name)
+                if fd is None:
+                    continue
+                # A part of the LHS already (nearly) determines r. A finer grouping can only have fewer
+                # violations, so the pair would just isolate the dirty rows and look like a clean FD.
+                if any((n, rhs.name) in singles for n in names):
+                    continue
+                found.append(fd)
+
+    # Root cause: if X -> Z holds exactly and Z -> r (nearly) holds, the broken X -> r is the same
+    # inconsistency seen through Z, so only Z -> r is kept. Z's groups are unions of X's groups, so
+    # Z -> r never has fewer violations than X -> r; no comparison of counts is needed. Equivalent
+    # columns (X <-> Z) are ordered by position so that exactly one of them keeps the dependency.
+    def upstream(x: str, z: str) -> bool:
+        return (x, z) in exact_single and ((z, x) not in exact_single or ordinal[z] < ordinal[x])
+
+    for (x, r), fd in singles.items():
+        if fd["violating_rows"] > 0 and any(
+                z != r and upstream(x, z) and (z, r) in singles
+                for z in {zz for (xx, zz) in exact_single if xx == x}):
+            continue
+        found.append(fd)
     return found
 
 
@@ -171,17 +202,25 @@ FROM qlens.functional_dependencies f
 JOIN qlens.dataset_columns rc ON rc.id = f.rhs_column_id
 JOIN qlens.fd_lhs_columns l ON l.fd_id = f.id
 JOIN qlens.dataset_columns lc ON lc.id = l.column_id
-WHERE f.dataset_id = %(ds)s AND (%(fd)s::bigint IS NULL OR f.id = %(fd)s)
+WHERE f.dataset_id = %(ds)s
 GROUP BY f.id, rc.name, rc.label, rc.ordinal
 ORDER BY f.lhs_size, min(lc.ordinal), max(lc.ordinal), rc.ordinal
 """
 
 
 def load_fds(conn: psycopg.Connection, dataset_id: int, fd_id: int | None = None) -> list[FDOut]:
-    return [FDOut(id=r["id"], lhs=r["lhs"], rhs=r["rhs"], is_exact=r["is_exact"],
-                  violating_rows=r["violating_rows"], violation_ratio=r["violation_ratio"],
-                  accepted=r["accepted"], sentence=sentence(r["lhs_labels"], r["rhs_label"], r["violating_rows"]))
-            for r in conn.execute(_FD_SQL, {"ds": dataset_id, "fd": fd_id})]
+    rows = conn.execute(_FD_SQL, {"ds": dataset_id}).fetchall()
+    order = [r["name"] for r in conn.execute(
+        "SELECT name FROM qlens.dataset_columns WHERE dataset_id = %s ORDER BY ordinal", (dataset_id,))]
+    cover = {(fd.lhs, fd.rhs) for fd in minimal_cover(
+        [FD(frozenset(r["lhs"]), r["rhs"]) for r in rows if r["is_exact"] and r["accepted"]], order)}
+    out = [FDOut(id=r["id"], lhs=r["lhs"], rhs=r["rhs"], is_exact=r["is_exact"],
+                 violating_rows=r["violating_rows"], violation_ratio=r["violation_ratio"],
+                 accepted=r["accepted"],
+                 is_derived=r["is_exact"] and r["accepted"] and (frozenset(r["lhs"]), r["rhs"]) not in cover,
+                 sentence=sentence(r["lhs_labels"], r["rhs_label"], r["violating_rows"]))
+           for r in rows]
+    return [f for f in out if fd_id is None or f.id == fd_id]
 
 
 def to_algebra(fds: list[FDOut]) -> list[FD]:
