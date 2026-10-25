@@ -1,11 +1,11 @@
 # QLens
 
 QLens is an automated relational database design and normalization system. You upload a spreadsheet (CSV or XLSX) and it
-loads the rows into PostgreSQL, discovers the functional dependencies hidden in the data with SQL queries, and finds
-candidate keys and normal-form violations (2NF, 3NF, BCNF). It flags near-miss dependencies as data inconsistencies
-you can fix, then synthesizes a lossless 3NF decomposition with primary keys, foreign keys and constraints. Applying the
-design creates the real tables and checks the split is lossless by reconstructing the original rows with a natural join and
-comparing them with `EXCEPT ALL`.
+loads the rows into PostgreSQL, discovers the exact and approximate functional dependencies hidden in the data with SQL
+queries, and finds the candidate keys. It flags near-duplicate values and near-miss dependencies as data inconsistencies
+you can fix, then computes a canonical cover of the accepted dependencies and synthesizes a 3NF decomposition (lossless
+and dependency-preserving) with primary keys, foreign keys and constraints. Applying the design creates the real tables
+and checks the split is lossless by reconstructing the original rows with joins and comparing them with `EXCEPT ALL`.
 
 Once the schema exists, QLens is also a small lab for working with it. The Data page lets you browse and edit rows (with
 filters, related records, CSV export and an audit log), run SELECT queries and confirmed INSERT/UPDATE/DELETE statements in
@@ -68,13 +68,19 @@ Do not run two `pytest` sessions at once: they share the `qlens_test` schema.
 
 1. **Landing** page, then **Sign up** and open the dashboard. Create a workspace with **Try a sample** and pick the fee register
    (3000 rows: a flat sheet of 300 students x 10 months with planted mistakes).
-2. **Analyze.** Show the discovered functional dependencies (for example `student_name -> batch` and `batch -> teacher`), the
-   candidate keys and the normal-form violations. Point out the inconsistencies (for example `student_phone -> student_name` broken by 8 rows with odd spellings; approximate FDs, a few rows that break an
-   otherwise exact rule), fix them, then **Accept all**.
-3. **Design.** The ER canvas shows the proposed 3NF tables. Rename a table (for example `teachers` to `staff`) and click **Apply design**. QLens
-   creates the tables and reports the lossless check (`EXCEPT ALL` both ways returns 0 rows).
-4. **Data > Browse.** Add a student. Add the same name again to trigger the UNIQUE constraint card. Add a fee for a student that
-   does not exist to trigger the foreign key card. Open a row to show related records; export CSV; show the audit log.
+2. **Analyze.** Show the discovered exact functional dependencies (for example `student_name -> batch` and
+   `batch -> teacher`) and the candidate keys. Point out the inconsistencies: near-duplicate spellings and approximate
+   dependencies, where a few rows break an otherwise exact rule (for example `student_phone -> student_name` broken by
+   8 rows with odd spellings). Fix them, then **Accept all**.
+3. **Design.** The ER canvas shows the 3NF tables synthesized from a canonical cover of the accepted dependencies. Rename
+   a table (for example `teachers` to `staff`) and click **Apply design**. QLens creates the tables and reports the lossless
+   check (`EXCEPT ALL` both ways returns 0 rows). The `id` columns are surrogate keys and keep their names.
+4. **Constraints.** In **Data > Browse**, open `students`, add a student, then add the same name again to trigger the
+   UNIQUE card. Delete a student who has fee records to trigger the FOREIGN KEY card (the generated foreign keys are
+   `ON DELETE RESTRICT`). In **Data > SQL**, run
+   `INSERT INTO fee_register (student_id, month, fee_paid, payment_mode) VALUES (999999, 'Apr', 4000, 'UPI');` and confirm
+   it: there is no student 999999, so the FOREIGN KEY card explains the refused insert. Back in Browse, open a row to show
+   related records; export CSV; show the audit log.
 5. **Data > SQL.** Run a join across the new tables. Select `SELECT * FROM fee_register WHERE fee_paid = 2100`, click
    **Explain & speed up**, read the plan (Seq Scan), try the suggested index and compare timings. Run a GROUP BY query and use
    **Step through** to see each clause's intermediate result. Run an `UPDATE` and confirm it in the dialog.
