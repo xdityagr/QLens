@@ -13,7 +13,7 @@ class Settings(BaseSettings):
 
     database_url: str
     test_database_url: str
-    # Only setup_db needs superuser access, and it reads the password from .env.admin instead.
+    # Only setup_db needs superuser access, and it reads the password from .env.pgadmin instead.
     admin_database_url: str | None = None
     secret_key: str
     # Roles are cluster-wide, so tests use a different prefix ("qlenstest_ws_") from dev.
@@ -22,7 +22,7 @@ class Settings(BaseSettings):
     claude_model: str = "claude-sonnet-5-5"
     session_days: int = 14
     pg_host: str = "localhost"
-    pg_port: int = 5433
+    pg_port: int = 5544
 
     @property
     def pg_dbname(self) -> str:

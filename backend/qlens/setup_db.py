@@ -1,6 +1,7 @@
 """One-time, idempotent database bootstrap: `uv run python -m qlens.setup_db`.
 
-Reads the postgres superuser password from the repo-root `.env.admin` (ADMIN_PG_PASSWORD).
+Reads the postgres superuser password from backend/.env.pgadmin (ADMIN_PG_PASSWORD), written by
+`qlens.pg_local init`.
 That password is only used for this connection; it is never printed or written anywhere.
 """
 import secrets
@@ -13,9 +14,9 @@ from psycopg import sql
 
 BACKEND_DIR = Path(__file__).resolve().parent.parent
 ENV_FILE = BACKEND_DIR / ".env"
-ADMIN_ENV_FILE = BACKEND_DIR.parent / ".env.admin"
+ADMIN_ENV_FILE = BACKEND_DIR / ".env.pgadmin"
 
-HOST, PORT = "localhost", 5433
+HOST, PORT = "localhost", 5544
 APP_ROLE = "qlens_app"
 DATABASES = ("qlens", "qlens_test")
 
