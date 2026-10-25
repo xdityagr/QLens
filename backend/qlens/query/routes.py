@@ -128,15 +128,20 @@ _SAVED_COLS = "id, title, sql_text, run_count, last_run_at, last_duration_ms, cr
 # ---- recording ------------------------------------------------------------------------------------
 
 def record_run(conn: psycopg.Connection, ws_id: int, sql_text: str, source: str, target: str,
-               result_or_error: QueryResult | QueryError | ApiError, saved_query_id: int | None = None) -> int:
-    """Insert one query_runs row. The trigger on query_runs updates the saved query's stats for ok runs."""
+               result_or_error: QueryResult | QueryError | ApiError, saved_query_id: int | None = None,
+               duration_ms: float | None = None) -> int:
+    """Insert one query_runs row. The trigger on query_runs updates the saved query's stats for ok runs.
+
+    duration_ms: how long an ApiError outcome ran in the database (a refused write); checks that refuse
+    before running have none.
+    """
     r = result_or_error
     if isinstance(r, QueryResult):
         status, duration, row_count, error = "ok", r.duration_ms, r.row_count, None
     elif isinstance(r, QueryError):
         status, duration, row_count, error = ("timeout" if r.code == "timeout" else "error"), r.duration_ms, None, r.message
     else:
-        status, duration, row_count, error = "error", None, None, r.message
+        status, duration, row_count, error = "error", duration_ms, None, r.message
     return conn.execute(
         "INSERT INTO qlens.query_runs (workspace_id, saved_query_id, sql_text, source, target, status, "
         "duration_ms, row_count, error_message) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s) RETURNING id",
@@ -182,7 +187,7 @@ def run_query(body: QueryIn, conn: db.Conn, ws: WorkspaceRow = Depends(owned_wor
 @router.post("/query/write")
 def run_write(body: WriteIn, conn: db.Conn, ws: WorkspaceRow = Depends(owned_workspace)):
     """One INSERT, UPDATE or DELETE on a generated table, committed. SELECTs never come here (see /query)."""
-    sql_text, outcome, stmt = body.sql, None, None
+    sql_text, outcome, stmt, ran_ms = body.sql, None, None, None
     try:
         try:
             stmt = validate_write(body.sql)
@@ -200,12 +205,13 @@ def run_write(body: WriteIn, conn: db.Conn, ws: WorkspaceRow = Depends(owned_wor
         try:
             outcome = sandbox.run_write(ws.id, sql_text)
         except WriteRefused as e:
+            ran_ms = e.duration_ms
             position = e.error.diag.statement_position
             outcome = sqlwrite.explain_error(conn, ws.id, target, stmt.kind, e.error,
                                            int(position) if position else None)
     except (ApiError, QueryError) as e:
         outcome = e
-    run_id = record_run(conn, ws.id, sql_text, "typed", "main", outcome)
+    run_id = record_run(conn, ws.id, sql_text, "typed", "main", outcome, duration_ms=ran_ms)
     if isinstance(outcome, QueryResult):
         returning = (ReturningOut(columns=outcome.columns, rows=outcome.rows, truncated=outcome.truncated)
                      if outcome.columns else None)

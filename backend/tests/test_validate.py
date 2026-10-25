@@ -164,6 +164,11 @@ def test_write_accepted(sql, kind, schema, table):
     ("UPDATE t SET a = set_config('role', 'qlens_app', false)", "forbidden_function"),
     ("DELETE FROM t WHERE pg_read_file('x') IS NOT NULL", "forbidden_function"),
     ("UPDATE qlens.qlens.t SET a = 1", "write_target_not_allowed"),
+    ("INSERT INTO t (a) VALUES (lo_create(0))", "forbidden_function"),
+    ("UPDATE t SET a = lo_from_bytea(0, 'x')", "forbidden_function"),
+    ("UPDATE t SET a = lo_put(1, 0, 'x')", "forbidden_function"),
+    ("DELETE FROM t WHERE lo_unlink(1) = 1", "forbidden_function"),
+    ("UPDATE t SET a = 1 WHERE pg_notify('c', 'x') IS NULL", "forbidden_function"),
     ("UPDATE t SET", "syntax_error"),
 ])
 def test_write_rejections(sql, code):

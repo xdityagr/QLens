@@ -129,6 +129,41 @@ def test_a_failing_row_rolls_back_the_whole_statement(client, conn, ws_id):
     assert conn.execute(f"SELECT count(*) AS n FROM ws_{ws_id}.students").fetchone()["n"] == 300
 
 
+def test_changing_a_referenced_key_is_409_in_plain_words(client, conn, ws_id):
+    # id is GENERATED ALWAYS, but SET id = DEFAULT gives the row a new one: fee rows still point at the old id.
+    n = conn.execute(f"SELECT count(*) AS n FROM ws_{ws_id}.fee_register WHERE student_id = 3").fetchone()["n"]
+    r = _write(client, ws_id, "UPDATE students SET id = DEFAULT WHERE id = 3")
+    assert r.status_code == 409, r.text
+    err = r.json()["error"]
+    assert err["code"] == "foreign_key_violation"
+    assert err["message"] == (f"This student is referenced by {n} fee register records, so its id cannot change; "
+                              "delete or reassign them first.")
+    assert "None" not in err["message"]
+    d = err["detail"]
+    assert (d["constraint"], d["referencing_table"], d["referencing_rows"], d["operation"]) == (
+        "fee_register_student_id_fkey", "fee_register", n, "UPDATE")
+
+
+def test_referenced_key_other_than_id_is_counted_by_that_key(client, conn, ws_id):
+    # A foreign key on a natural key (not id): the DETAIL names batch, not id.
+    ws = f"ws_{ws_id}"
+    conn.execute(f"ALTER TABLE {ws}.students ADD COLUMN batch_name text")
+    conn.execute(f"UPDATE {ws}.students s SET batch_name = b.batch FROM {ws}.batches b WHERE b.id = s.batch_id")
+    conn.execute(f"ALTER TABLE {ws}.students ADD CONSTRAINT students_batch_name_fkey FOREIGN KEY (batch_name) "
+                 f"REFERENCES {ws}.batches (batch) ON DELETE RESTRICT")
+    conn.execute(f"ALTER TABLE {ws}.students DROP CONSTRAINT students_batch_id_fkey")
+    conn.commit()
+    batch = conn.execute(f"SELECT id, batch FROM {ws}.batches ORDER BY id LIMIT 1").fetchone()
+    n = conn.execute(f"SELECT count(*) AS n FROM {ws}.students WHERE batch_name = %s", (batch["batch"],)).fetchone()["n"]
+    assert n > 0
+    r = _write(client, ws_id, f"DELETE FROM batches WHERE id = {batch['id']}")
+    assert r.status_code == 409, r.text
+    err = r.json()["error"]
+    rows = "record" if n == 1 else "records"
+    assert err["message"] == f"This batch is referenced by {n} student {rows}; delete or reassign them first."
+    assert err["detail"]["referencing_rows"] == n
+
+
 def test_unique_violation_names_the_row(client, conn, ws_id):
     first = conn.execute(f"SELECT teacher FROM ws_{ws_id}.teachers WHERE id = 1").fetchone()["teacher"]
     r = _write(client, ws_id, "UPDATE teachers SET teacher = (SELECT teacher FROM teachers WHERE id = 1) WHERE id = 2")
@@ -143,6 +178,35 @@ def test_not_null_violation_is_422(client, ws_id):
     assert r.status_code == 422
     err = r.json()["error"]
     assert err["code"] == "not_null_violation" and err["detail"]["definition"] == "NOT NULL teacher"
+
+
+def test_refused_write_records_its_duration(client, ws_id):
+    r = _write(client, ws_id, "DELETE FROM students WHERE id = 3")
+    assert r.status_code == 409
+    [h] = _history(client, ws_id)
+    assert h["status"] == "error" and h["duration_ms"] is not None and h["duration_ms"] >= 0
+
+
+def test_a_write_past_the_time_limit_is_stopped_and_changes_nothing(client, conn, ws_id):
+    before = conn.execute(f"SELECT teacher_phone FROM ws_{ws_id}.teachers WHERE id = 1").fetchone()["teacher_phone"]
+    r = _write(client, ws_id, "UPDATE teachers SET teacher_phone = 'slow' "
+                              "WHERE id = 1 AND (SELECT count(*) FROM pg_sleep(8)) = 1")
+    assert r.status_code == 400, r.text
+    assert r.json()["error"]["code"] == "timeout" and r.json()["error"]["detail"]["sqlstate"] == "57014"
+    [h] = _history(client, ws_id)
+    assert h["status"] == "timeout" and 4000 < h["duration_ms"] < 8000
+    after = conn.execute(f"SELECT teacher_phone FROM ws_{ws_id}.teachers WHERE id = 1").fetchone()["teacher_phone"]
+    assert after == before
+    assert client.get(_url(ws_id, "/data-changes")).json()["change_count"] == 0
+
+
+def test_the_audit_function_cannot_be_executed_by_public(conn, applied_fee):
+    acl = conn.execute("SELECT proacl::text AS acl FROM pg_proc WHERE oid = 'qlens.log_row_change()'::regprocedure"
+                       ).fetchone()["acl"]
+    # an ACL item for PUBLIC has an empty grantee: "=X/owner"
+    assert acl is not None and not any(item.startswith("=") for item in acl.strip("{}").split(","))
+    assert not conn.execute("SELECT has_function_privilege(%s, 'qlens.log_row_change()', 'EXECUTE') AS ok",
+                            (db.ws_role(applied_fee.id),)).fetchone()["ok"]
 
 
 def test_other_database_errors_are_400_and_recorded(client, ws_id):

@@ -6,10 +6,13 @@ Browse tab's own edits (service._explain).
 """
 import re
 
+from typing import Any
+
 import psycopg
+from psycopg import sql
 
 from qlens import db
-from qlens.data.service import Op, Table, _explain, tables
+from qlens.data.service import Op, Table, _constraint, _explain, _singular, tables
 from qlens.design.proposal import VIEW_NAME
 from qlens.errors import ApiError
 
@@ -60,8 +63,46 @@ def explain_error(conn: psycopg.Connection, ws_id: int, t: Table, op: Op, e: psy
     A typed statement has no submitted values or row id; the key PostgreSQL reports stands in for both.
     """
     values = key_values(e.diag.message_detail)
-    row_id = int(values["id"]) if op == "DELETE" and (values.get("id") or "").isdigit() else None
-    err = _explain(conn, t, tables(conn, ws_id), op, row_id, values, e)
+    state = e.diag.sqlstate or ""
+    if state in ("23503", "23001") and "referenced from table" in (e.diag.message_detail or ""):
+        err = _still_referenced(conn, t, op, values, e)
+    elif state == "23503" and not values:
+        err = _explain(conn, t, tables(conn, ws_id), op, None, values, e)
+        ref = (err.detail or {}).get("referenced_table")
+        err.message = (f"No such {_singular(ref)}: {ref} has no matching row." if ref
+                       else "The referenced row does not exist.")
+    else:
+        err = _explain(conn, t, tables(conn, ws_id), op, None, values, e)
     if isinstance(err.detail, dict):
         err.detail["position"] = position   # where the editor can underline it, when PostgreSQL says
     return err
+
+
+def _still_referenced(conn: psycopg.Connection, t: Table, op: Op, values: dict[str, str | None],
+                      e: psycopg.Error) -> ApiError:
+    """A DELETE, or an UPDATE of a key, on a row that other rows still point at.
+
+    Counted by the key PostgreSQL names (usually id, but a foreign key can point at any unique column).
+    """
+    k = _constraint(conn, t.schema, e.diag.constraint_name)
+    server = e.diag.message_primary or str(e)
+    detail: dict[str, Any] = {
+        "sqlstate": e.diag.sqlstate, "constraint": k["name"] if k else e.diag.constraint_name,
+        "columns": list(k["columns"]) if k else [], "table": t.name, "operation": op, "kind": "foreign_key",
+        "definition": k["definition"] if k else None, "server_message": server}
+    noun = _singular(t.name)
+    if k is None or len(values) != 1:
+        return ApiError(409, "foreign_key_violation",
+                        f"Other rows still point at this {noun}; delete or reassign them first.", detail=detail)
+    child, child_cols = k["table"], list(k["columns"])
+    [value] = values.values()
+    # compared as text: the value comes from the DETAIL line, and the key can be of any type
+    n = conn.execute(sql.SQL("SELECT count(*) AS n FROM {} WHERE {}::text = %s").format(
+        sql.Identifier(t.schema, child), sql.Identifier(child_cols[0])), (value,)).fetchone()["n"]
+    rows = "record" if n == 1 else "records"
+    [key] = values.keys()
+    middle = f", so its {key} cannot change" if op == "UPDATE" else ""
+    message = (f"This {noun} is referenced by {n} {_singular(child)} {rows}{middle}; "
+               "delete or reassign them first.")
+    return ApiError(409, "foreign_key_violation", message,
+                    detail={**detail, "referencing_table": child, "referencing_rows": n})

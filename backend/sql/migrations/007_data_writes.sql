@@ -5,3 +5,5 @@
 -- Safe to expose: a trigger function cannot be called directly, and the sandbox role cannot create
 -- triggers (it owns no tables and has no TRIGGER privilege).
 ALTER FUNCTION qlens.log_row_change() SECURITY DEFINER SET search_path = pg_catalog, pg_temp;
+-- Nobody needs to call it: Apply attaches it as its owner, and a trigger runs it without an EXECUTE check.
+REVOKE EXECUTE ON FUNCTION qlens.log_row_change() FROM PUBLIC;

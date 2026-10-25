@@ -79,7 +79,8 @@ def _strip_trailing(sql_text: str, tokens) -> str:
 _NESTED_WRITE_IN_SELECT = ("not_a_select", "Data-modifying statements are not allowed, even inside a WITH.")
 
 
-def _check(sql_text: str, root: dict, nested_write: tuple[str, str] = _NESTED_WRITE_IN_SELECT) -> None:
+def _check(sql_text: str, root: dict, nested_write: tuple[str, str] = _NESTED_WRITE_IN_SELECT,
+           forbidden: frozenset[str] = FORBIDDEN_FUNCTIONS) -> None:
     """Iterative walk over the parse tree (nested dicts and lists), so depth cannot exhaust the stack."""
     stack: list = [root]
     while stack:
@@ -99,7 +100,7 @@ def _check(sql_text: str, root: dict, nested_write: tuple[str, str] = _NESTED_WR
                 raise _reject(*nested_write)
             elif key == "FuncCall":
                 name = (val.get("funcname") or [{}])[-1].get("String", {}).get("sval")
-                if name in FORBIDDEN_FUNCTIONS:
+                if name in forbidden:
                     raise _reject("forbidden_function", f"The function {name}() is not allowed.",
                                   _char_pos(sql_text, val.get("location")))
             if isinstance(val, (dict, list)):
@@ -142,6 +143,9 @@ def validate_select(sql_text: str) -> str:
     return _strip_trailing(sql_text, tokens)
 
 
+# On the write path also: large objects and NOTIFY have effects outside the target table.
+WRITE_FORBIDDEN_FUNCTIONS = FORBIDDEN_FUNCTIONS | {"lo_create", "lo_from_bytea", "lo_put", "lo_unlink", "pg_notify"}
+
 _WRITE_KINDS = {"InsertStmt": "INSERT", "UpdateStmt": "UPDATE", "DeleteStmt": "DELETE"}
 _NAMED_STATEMENTS = {"TruncateStmt": "TRUNCATE", "CopyStmt": "COPY", "MergeStmt": "MERGE"}
 
@@ -172,7 +176,8 @@ def validate_write(sql_text: str) -> WriteStatement:
     try:
         # Walk the statement's parts, not the statement itself: any other INSERT/UPDATE/DELETE inside is refused.
         _check(sql_text, body, ("one_write_only",
-                                "Only one INSERT, UPDATE or DELETE at a time; a WITH cannot change data too."))
+                                "Only one INSERT, UPDATE or DELETE at a time; a WITH cannot change data too."),
+               WRITE_FORBIDDEN_FUNCTIONS)
     except RecursionError:  # pragma: no cover - the walk is iterative; kept as a backstop
         raise _too_complex() from None
     rel = body["relation"]
