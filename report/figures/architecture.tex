@@ -85,15 +85,15 @@
     node[pos=0.45, left, note] {full access};
   \draw[flow, draw=lane4!80!black] ([xshift=1.4cm]pool.south) |- (6.2,-7.35) -| (src.north);
   \draw[flow, draw=lane4!80!black] (6.2,-7.35) -| ([xshift=-2mm]main.north);
-  \node[note, anchor=south] at (4.5,-7.33) {DDL, COPY, cleanup};
+  \node[note, anchor=west] at (5.12,-6.45) {DDL, COPY, cleanup};
   \draw[flow, draw=lane3!90!black, todo] ([xshift=-1.2cm]sbx.south) -- ++(0,-0.5) -| ([xshift=6mm]src.north);
   \draw[flow, draw=lane3!90!black, todo] ([xshift=1.0cm]sbx.south) -- ++(0,-0.5) -| ([xshift=3mm]main.north);
   \draw[flow, draw=lane3!90!black, todo] ([xshift=2.9cm]sbx.south) -- ([xshift=2.9cm]sbx.south |- lab.north);
   \node[note, anchor=west] at ([xshift=3.0cm]sbx.south |- 0,-6.5) {SELECT only};
   % denied path to the metadata schema
-  \draw[line width=0.7pt, draw=lane7, dash pattern=on 2pt off 1.5pt] ([xshift=-3.3cm]sbx.south) -- ++(0,-0.35) -| (4.2,-8.62);
-  \node[text=lane7, font=\bfseries\small] at (4.2,-8.62) {\ding{55}};
-  \node[note, text=lane7, anchor=west] at (4.35,-8.95) {no privilege on \code{qlens}};
+  \draw[line width=0.7pt, draw=lane7, dash pattern=on 2pt off 1.5pt] ([xshift=-3.3cm]sbx.south) -- ++(0,-0.35) -| (4.2,-6.75);
+  \node[text=lane7, font=\bfseries\small] at (4.2,-6.75) {\ding{55}};
+  \node[note, text=lane7, anchor=west, fill=white, inner sep=1pt] at (4.38,-6.9) {no privilege on \code{qlens}};
 \end{tikzpicture}
 }
 \caption{Layered architecture of QLens. Application code reaches PostgreSQL through two kinds of connection: the shared pool as the owning role, and a per-query sandbox connection as the workspace's own low-privilege LOGIN role.}\label{fig:architecture}

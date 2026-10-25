@@ -86,7 +86,7 @@ has to be stored.
 \paragraph{Data layer.} All state lives in one PostgreSQL~18 cluster \cite{postgres18docs} that
 the project starts privately on a non-default port. It contains four kinds of schema:
 \begin{itemize}
-  \item \code{qlens}: the metadata schema owned by the application (21 tables, 3 views, 2 trigger
+  \item \code{qlens}: the metadata schema owned by the application (22 tables, 3 views, 2 trigger
   functions, the discovery functions \code{check\_fd}, \code{is\_unique} and \code{try\_date});
   \item \wsn{}: the user's normalized tables after a design has been applied, and the only schema
   that queries run against by default;
@@ -661,7 +661,7 @@ components above to what exists at the time of writing.
     \toprule
     Component & Notes & Status \\
     \midrule
-    Metadata schema, triggers, views & 21 tables, generated columns, partial unique indexes & \stdone \\
+    Metadata schema, triggers, views & 22 tables, generated columns, partial unique indexes & \stdone \\
     Import and type inference & CSV and XLSX, \code{try\_date}, column profile & \stdone \\
     Dependency and key discovery & \code{check\_fd}, \code{is\_unique}, noise suppression & \stdone \\
     Duplicate detection and fixes & \code{pg\_trgm} with GIN, audit log, accept all & \stdone \\
