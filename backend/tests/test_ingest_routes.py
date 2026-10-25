@@ -51,7 +51,7 @@ def test_preview_serialises_typed_values(client, ws_id):
     client.post(f"/api/workspaces/{ws_id}/dataset/sample", json={"name": "kirana_sales"})
     p = client.get(f"/api/workspaces/{ws_id}/dataset").json()["preview"]
     row = dict(zip(p["columns"], p["rows"][0]))
-    assert row["date_dd_mm_yyyy"][4] == "-"                          # ISO date string
+    assert row["date"][4] == "-"                          # ISO date string
     assert isinstance(row["qty"], int) and isinstance(row["unit_price"], str)   # numeric kept exact as text
 
 

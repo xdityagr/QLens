@@ -22,11 +22,13 @@ fee_register.csv  (3000 rows = 300 students x 10 months)
     inferred as text, not numbers.
 
 kirana_sales.csv  (600 bills, 1-6 distinct items each)
+  * Date is written dd/mm/yyyy.
   * 80 customers, 40 items in 6 categories; Amount = Unit Price x Qty in every row.
   * Planted: 'Toor Dal 1kg' has its old price in exactly 3 rows (the first three it appears in, Amount
     consistent with that price); 'Mohan Lal' is written 'Mohan lal' in exactly 3 rows.
 
 hostel_mess.csv  (60 students x 14 days x 3 meals = 2520 rows)
+  * Date is written yyyy-mm-dd; Attended is Yes or No.
   * room -> block and block -> warden are exact apart from the plant; one menu item per (date, meal).
   * Planted: Block B's warden 'Mrs. Rao' is written 'Mrs Rao' in exactly 2 rows.
 """
@@ -152,7 +154,7 @@ _TOOR_OLD_PRICE = Decimal("148")
 
 
 def _kirana_sales(rng: random.Random):
-    header = ["Bill No", "Date (dd/mm/yyyy)", "Customer", "Customer Phone", "Item", "Category", "Unit Price",
+    header = ["Bill No", "Date", "Customer", "Customer Phone", "Item", "Category", "Unit Price",
               "Qty", "Amount"]
     assert len(_ITEMS) == 40 and len({c for _, c, _ in _ITEMS}) == 6
     pool = [f"{f} {l}" for f in _KIRANA_FIRST for l in _KIRANA_LAST if f"{f} {l}" != "Mohan Lal"]
@@ -202,8 +204,8 @@ _MENU = {
 
 
 def _hostel_mess(rng: random.Random):
-    header = ["Room", "Student", "Hostel Block", "Warden", "Date (yyyy-mm-dd)", "Meal", "Menu Item",
-              "Attended (Yes/No)"]
+    header = ["Room", "Student", "Hostel Block", "Warden", "Date", "Meal", "Menu Item",
+              "Attended"]
     names = rng.sample([f"{f} {l}" for f in _HOSTEL_FIRST for l in _HOSTEL_LAST], 60)
     rooms = [(room, block, warden) for block, warden, nums in _BLOCKS for room in nums]   # 30 rooms
     # two students per room

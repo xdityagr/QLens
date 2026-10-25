@@ -100,7 +100,7 @@ def test_fee_register_structure_guarantees():
 def test_kirana_shape_and_plants():
     name, rows = load("kirana_sales")
     assert name == "kirana_sales.csv"
-    assert list(rows[0]) == ["Bill No", "Date (dd/mm/yyyy)", "Customer", "Customer Phone", "Item", "Category",
+    assert list(rows[0]) == ["Bill No", "Date", "Customer", "Customer Phone", "Item", "Category",
                              "Unit Price", "Qty", "Amount"]
     bills = defaultdict(list)
     for r in rows:
@@ -109,13 +109,13 @@ def test_kirana_shape_and_plants():
     for lines in bills.values():
         assert 1 <= len(lines) <= 6
         assert len({ln["Item"] for ln in lines}) == len(lines)         # distinct items per bill
-        assert len({ln["Date (dd/mm/yyyy)"] for ln in lines}) == 1
+        assert len({ln["Date"] for ln in lines}) == 1
     assert len({r["Customer Phone"] for r in rows}) == 80
     assert len({r["Item"] for r in rows}) == 40 and len({r["Category"] for r in rows}) == 6
     assert any("." in r["Unit Price"] for r in rows)
     for r in rows:
         assert Decimal(r["Amount"]) == Decimal(r["Unit Price"]) * int(r["Qty"])
-        d, m, y = r["Date (dd/mm/yyyy)"].split("/")
+        d, m, y = r["Date"].split("/")
         assert len(d) == 2 and len(m) == 2 and len(y) == 4 and 1 <= int(d) <= 31 and 1 <= int(m) <= 12
 
     dal = Counter(Decimal(r["Unit Price"]) for r in rows if r["Item"] == "Toor Dal 1kg")
@@ -133,15 +133,15 @@ def test_hostel_rows():
 def test_hostel_structure_and_plants():
     name, rows = load("hostel_mess")
     assert name == "hostel_mess.csv"
-    assert list(rows[0]) == ["Room", "Student", "Hostel Block", "Warden", "Date (yyyy-mm-dd)", "Meal",
-                             "Menu Item", "Attended (Yes/No)"]
+    assert list(rows[0]) == ["Room", "Student", "Hostel Block", "Warden", "Date", "Meal",
+                             "Menu Item", "Attended"]
     assert len({r["Student"] for r in rows}) == 60
-    assert len({r["Date (yyyy-mm-dd)"] for r in rows}) == 14
+    assert len({r["Date"] for r in rows}) == 14
     assert {r["Meal"] for r in rows} == {"Breakfast", "Lunch", "Dinner"}
-    assert {r["Attended (Yes/No)"] for r in rows} == {"Yes", "No"}
-    assert len({(r["Student"], r["Date (yyyy-mm-dd)"], r["Meal"]) for r in rows}) == 2520
+    assert {r["Attended"] for r in rows} == {"Yes", "No"}
+    assert len({(r["Student"], r["Date"], r["Meal"]) for r in rows}) == 2520
     assert len({(r["Room"], r["Hostel Block"]) for r in rows}) == len({r["Room"] for r in rows})   # room -> block
-    assert len({(r["Date (yyyy-mm-dd)"], r["Meal"], r["Menu Item"]) for r in rows}) == 14 * 3
+    assert len({(r["Date"], r["Meal"], r["Menu Item"]) for r in rows}) == 14 * 3
     assert sum(r["Warden"] == "Mrs Rao" for r in rows) == 2
     wardens = defaultdict(set)
     for r in rows:

@@ -29,16 +29,16 @@ def test_fee_register_types(conn, workspace):
 
 def test_kirana_and_hostel_types(conn, workspace):
     ds = import_dataset(conn, workspace, *generate("kirana_sales"), source="sample")
-    assert types_of(ds) == {"bill_no": "text", "date_dd_mm_yyyy": "date", "customer": "text",
+    assert types_of(ds) == {"bill_no": "text", "date": "date", "customer": "text",
                             "customer_phone": "text", "item": "text", "category": "text",
                             "unit_price": "numeric", "qty": "integer", "amount": "numeric"}
-    n = conn.execute(sql.SQL("SELECT count(*) AS n FROM {}._staging WHERE date_dd_mm_yyyy IS NULL").format(
+    n = conn.execute(sql.SQL("SELECT count(*) AS n FROM {}._staging WHERE date IS NULL").format(
         src_ident(workspace))).fetchone()["n"]
     assert n == 0                                                      # every dd/mm/yyyy parsed
     ds = import_dataset(conn, workspace, *generate("hostel_mess"), source="sample")
     assert types_of(ds) == {"room": "integer", "student": "text", "hostel_block": "text", "warden": "text",
-                            "date_yyyy_mm_dd": "date", "meal": "text", "menu_item": "text",
-                            "attended_yes_no": "boolean"}
+                            "date": "date", "meal": "text", "menu_item": "text",
+                            "attended": "boolean"}
 
 
 def test_raw_is_kept_untouched_and_staging_typed(conn, workspace):
@@ -157,17 +157,15 @@ def test_sandbox_role_can_select_but_not_write(conn, workspace, test_url):
             w.execute(f"DELETE FROM {src}._staging")
 
 
-# The three sample fixtures share the `workspace` fixture, so a test uses one of them.
-def test_sample_fixtures(fee_ws, conn):
-    assert conn.execute("SELECT row_count FROM qlens.datasets WHERE id = %s",
-                        (fee_ws.dataset_id,)).fetchone()["row_count"] == 3000
-
-
-def test_kirana_fixture(kirana_ws, conn):
-    assert conn.execute("SELECT column_count FROM qlens.datasets WHERE id = %s",
-                        (kirana_ws.dataset_id,)).fetchone()["column_count"] == 9
-
-
-def test_hostel_fixture(hostel_ws, conn):
-    assert conn.execute("SELECT row_count FROM qlens.datasets WHERE id = %s",
-                        (hostel_ws.dataset_id,)).fetchone()["row_count"] == 2520
+def test_sample_fixtures_are_independent(fee_ws, kirana_ws, hostel_ws, conn):
+    assert len({fee_ws.id, kirana_ws.id, hostel_ws.id}) == 3
+    assert len({fee_ws.dataset_id, kirana_ws.dataset_id, hostel_ws.dataset_id}) == 3
+    for ws, rows, filename in ((fee_ws, 3000, "fee_register.csv"), (kirana_ws, None, "kirana_sales.csv"),
+                               (hostel_ws, 2520, "hostel_mess.csv")):
+        ds = conn.execute("SELECT id, workspace_id, row_count, original_filename FROM qlens.datasets "
+                          "WHERE id = %s", (ws.dataset_id,)).fetchone()
+        assert ds["workspace_id"] == ws.id and ds["original_filename"] == filename
+        staged = conn.execute(sql.SQL("SELECT count(*) AS n FROM {}._staging").format(src_ident(ws.id))).fetchone()["n"]
+        assert staged == ds["row_count"] and (rows is None or staged == rows)
+    owners = {r["owner_id"] for r in conn.execute("SELECT owner_id FROM qlens.workspaces")}
+    assert len(owners) == 3                                            # a fresh user per workspace

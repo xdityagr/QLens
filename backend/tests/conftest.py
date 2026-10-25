@@ -1,3 +1,4 @@
+import itertools
 from dataclasses import dataclass
 
 import psycopg
@@ -94,18 +95,29 @@ class WsHandle:
 
 
 @pytest.fixture
-def workspace(conn, monkeypatch) -> int:
-    """A user plus workspace built through the service layer on the test connection.
+def make_workspace(conn, monkeypatch):
+    """Factory: every call makes a fresh user and a fresh workspace through the service layer.
 
-    Committed, so other connections (the sandbox role, a TestClient) can see it; the `conn` fixture
+    Committed, so other connections (the sandbox role, a TestClient) can see them; the `conn` fixture
     wipes every workspace schema, role and metadata row at the start of the next test.
     """
     monkeypatch.setattr(get_settings(), "role_prefix", TEST_ROLE_PREFIX)
-    user = auth_service.signup(conn, auth_service.SignupIn(
-        email="fixture@example.com", password="fixture-password", display_name="Fixture"))
-    ws = create_workspace(conn, user.id, "Fixture workspace")
-    conn.commit()
-    return ws.id
+    made = itertools.count(1)
+
+    def make() -> int:
+        n = next(made)
+        user = auth_service.signup(conn, auth_service.SignupIn(
+            email=f"fixture{n}@example.com", password="fixture-password", display_name=f"Fixture {n}"))
+        ws = create_workspace(conn, user.id, "Fixture workspace")
+        conn.commit()
+        return ws.id
+
+    return make
+
+
+@pytest.fixture
+def workspace(make_workspace) -> int:
+    return make_workspace()
 
 
 def _with_sample(conn, ws_id: int, name: str) -> WsHandle:
@@ -117,16 +129,17 @@ def _with_sample(conn, ws_id: int, name: str) -> WsHandle:
     return WsHandle(id=ws_id, dataset_id=ds.id)
 
 
+# Each sample fixture gets its own workspace (and user), so a test can request several of them.
 @pytest.fixture
-def fee_ws(conn, workspace) -> WsHandle:
-    return _with_sample(conn, workspace, "fee_register")
-
-
-@pytest.fixture
-def kirana_ws(conn, workspace) -> WsHandle:
-    return _with_sample(conn, workspace, "kirana_sales")
+def fee_ws(conn, make_workspace) -> WsHandle:
+    return _with_sample(conn, make_workspace(), "fee_register")
 
 
 @pytest.fixture
-def hostel_ws(conn, workspace) -> WsHandle:
-    return _with_sample(conn, workspace, "hostel_mess")
+def kirana_ws(conn, make_workspace) -> WsHandle:
+    return _with_sample(conn, make_workspace(), "kirana_sales")
+
+
+@pytest.fixture
+def hostel_ws(conn, make_workspace) -> WsHandle:
+    return _with_sample(conn, make_workspace(), "hostel_mess")
