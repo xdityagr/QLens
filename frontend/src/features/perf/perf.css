@@ -1,0 +1,202 @@
+/* Explain & speed up. Motion is transform / opacity only; reduced motion turns it off. */
+
+/* ---- the plan as a top-down tree of sentences ---- */
+.ex-tree,
+.ex-children {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+/* the rail that joins a step to the steps feeding it */
+.ex-children {
+  margin-left: 15px;
+  padding-left: 14px;
+  border-left: 1px solid var(--border-strong);
+}
+.ex-step {
+  position: relative;
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  margin: 3px 0;
+  padding: 8px 10px;
+  border: 1px solid transparent;
+  border-radius: var(--radius-control);
+  transition: background-color 120ms ease;
+}
+.ex-step:hover {
+  background: var(--hover);
+}
+/* elbow from the rail into each child step */
+.ex-children > li > .ex-step::before {
+  content: "";
+  position: absolute;
+  left: -15px;
+  top: 17px;
+  width: 12px;
+  border-top: 1px solid var(--border-strong);
+}
+/* the slowest step is outlined in red; the other heat bars stay neutral so they never read as a table lane */
+.ex-step[data-hot] {
+  background: color-mix(in oklab, var(--lane-7) 7%, transparent);
+  border-color: color-mix(in oklab, var(--lane-7) 45%, transparent);
+}
+.ex-dot {
+  flex-shrink: 0;
+  width: 9px;
+  height: 9px;
+  margin-top: 5px;
+  border-radius: 999px;
+  box-shadow: inset 0 0 0 1.5px var(--faint);
+}
+
+.ex-hot-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  height: 18px;
+  padding: 0 6px;
+  border-radius: 999px;
+  font-size: 10.5px;
+  font-weight: 500;
+  white-space: nowrap;
+  color: var(--text);
+  background: color-mix(in oklab, var(--lane-7) 14%, transparent);
+  border: 1px solid color-mix(in oklab, var(--lane-7) 40%, transparent);
+}
+.ex-hot-tag svg {
+  color: var(--lane-7);
+}
+.ex-warn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-height: 18px;
+  padding: 0 6px;
+  border-radius: 4px;
+  font-size: 11px;
+  color: var(--text);
+  background: color-mix(in oklab, var(--lane-6) 14%, transparent);
+  border: 1px solid color-mix(in oklab, var(--lane-6) 45%, transparent);
+}
+.ex-warn svg {
+  color: var(--lane-6);
+}
+
+/* this step's own time against the slowest step's */
+.ex-heat {
+  position: relative;
+  display: block;
+  width: 64px;
+  height: 4px;
+  overflow: hidden;
+  border-radius: 2px;
+  background: color-mix(in oklab, var(--muted) 18%, transparent);
+}
+.ex-heat-fill {
+  position: absolute;
+  inset: 0;
+  border-radius: 2px;
+  background: var(--muted);
+  transform-origin: left center;
+  transform: scaleX(var(--ex-heat));
+}
+
+/* ---- grow-in: steps appear from the root down, each bar fills after its step ---- */
+@keyframes ex-step-in {
+  from {
+    opacity: 0;
+    transform: translateY(-6px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+@keyframes ex-heat-in {
+  from {
+    transform: scaleX(0);
+  }
+  to {
+    transform: scaleX(var(--ex-heat));
+  }
+}
+.ex-step {
+  animation: ex-step-in 320ms cubic-bezier(0.2, 0.75, 0.25, 1) both;
+  animation-delay: calc(min(var(--ex-order, 0), 12) * 80ms);
+}
+.ex-step[data-hot] .ex-heat-fill {
+  background: var(--lane-7);
+}
+.ex-step .ex-heat-fill {
+  animation: ex-heat-in 480ms cubic-bezier(0.3, 0.6, 0.2, 1) both;
+  animation-delay: calc(min(var(--ex-order, 0), 12) * 80ms + 220ms);
+}
+
+/* ---- before / after ---- */
+.ba-bar {
+  height: 22px;
+  border-radius: 0 4px 4px 0;
+  transform-origin: left center;
+  animation: ba-grow 640ms cubic-bezier(0.25, 0.7, 0.2, 1) both;
+}
+@keyframes ba-grow {
+  from {
+    transform: scaleX(0);
+  }
+  to {
+    transform: scaleX(1);
+  }
+}
+@keyframes ba-pop {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+.ba-pop,
+.perf-in {
+  animation: ba-pop 320ms cubic-bezier(0.2, 0.75, 0.25, 1) both;
+}
+
+/* indeterminate progress while the speed test runs */
+@keyframes ex-sweep {
+  from {
+    transform: translateX(-100%);
+  }
+  to {
+    transform: translateX(250%);
+  }
+}
+.ex-sweep {
+  position: relative;
+  height: 2px;
+  overflow: hidden;
+  border-radius: 1px;
+  background: color-mix(in oklab, var(--accent) 14%, transparent);
+}
+.ex-sweep::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  width: 40%;
+  background: var(--accent);
+  animation: ex-sweep 1.2s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ex-step,
+  .ex-step .ex-heat-fill,
+  .ba-bar,
+  .ba-pop,
+  .perf-in {
+    animation: none !important;
+  }
+  .ex-sweep::after {
+    animation-duration: 3s;
+  }
+}
