@@ -1,26 +1,8 @@
-\chapter{Sample Data and More Screens}
+\chapter{More Screens}
 \label{app:samples}
-
-\begin{table}[htbp]
-\centering
-\caption[Sample sheets]{The three sample sheets and the errors planted in them.}
-\label{tab:samples}
-\small
-\begin{tabularx}{\textwidth}{@{}l r X X@{}}
-\toprule
-\textbf{Sheet} & \textbf{Rows} & \textbf{Contents} & \textbf{Planted errors} \\
-\midrule
-Fee register & 3{,}000 & 300 students $\times$ 10 months; 8 batches; 6 teachers & 4 names spelled two ways (8 rows); a teacher's old phone (5 rows) \\
-Kirana sales & 2{,}009 & 600 bills; 80 customers; 40 items & an old price (3 rows); a name spelled two ways (3 rows) \\
-Hostel mess & 2{,}520 & 60 students $\times$ 14 days $\times$ 3 meals & a warden's name spelled two ways (2 rows) \\
-\bottomrule
-\end{tabularx}
-\end{table}
 
 \newcommand{\appshot}[3]{%
   \begin{figure}[htbp]\centering
   \IfFileExists{screenshots/#1.png}{\fcolorbox{rule}{white}{\includegraphics[width=0.985\textwidth,keepaspectratio]{screenshots/#1.png}}}{}
   \caption[#2]{#3}\label{fig:app-#1}\end{figure}}
 \appshot{final-design-dark}{Design after Apply}{Design screen after Apply: the lossless-join check rebuilt all 3{,}000 rows exactly. Here the user had renamed \code{teachers} to \code{staff}.}
-\appshot{final-data-sql-dark}{Data page: SQL}{Data page, SQL tab: a join query on the new tables, run by the restricted database user.}
-\appshot{final-perf-index-dark}{Explain and speed up}{Explain \& speed up: the same query with and without a B-tree index on \code{fee\_register(fee\_paid)}.}

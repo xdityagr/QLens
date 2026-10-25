@@ -21,7 +21,7 @@ FR-2 & \textbf{Import.} Read a CSV or Excel sheet; keep the original cells uncha
 FR-3 & \textbf{Keys and dependencies.} Find candidate keys (1--3 columns) and functional dependencies using SQL. & \stdone \\
 FR-4 & \textbf{Clean-up.} Find similar spellings and conflicting values; let the user fix them; log every change. & \stdone \\
 FR-5 & \textbf{3NF design.} Canonical cover, 3NF decomposition, primary and foreign keys, the \code{CREATE TABLE} script. & \stdone \\
-FR-6 & \textbf{Design screen.} Show the design as a diagram; rename tables and columns before applying. & \stdone \\
+FR-6 & \textbf{Design screen.} Show the design as a diagram; rename tables and columns before applying (the \code{id} key column cannot be renamed). & \stdone \\
 FR-7 & \textbf{Apply.} Create and fill the tables in one transaction; keep them only if the lossless-join check passes. & \stdone \\
 FR-8 & \textbf{SQL.} Run \code{SELECT} queries read-only and confirmed \code{INSERT}/\code{UPDATE}/\code{DELETE} as one transaction; save queries; keep a history of runs. & \stdone \\
 FR-9 & \textbf{Browse data.} Add, edit and delete rows through forms; show which constraint rejected a change; record every change with a trigger. & \stdone \\
@@ -47,7 +47,7 @@ NFR-1 & Security & Each workspace has its own database user that can only read i
 NFR-2 & Correctness & The design is in 3NF, lossless and dependency-preserving; the lossless join is also checked on the real rows. \\
 NFR-3 & Integrity & Primary keys, foreign keys, \code{UNIQUE}, \code{NOT NULL} and \code{CHECK} constraints are enforced by the database. \\
 NFR-4 & Atomicity & Import, every fix and apply each run as one transaction; a failure leaves nothing half done. \\
-NFR-5 & Performance & Analysis of the 3{,}000-row sample finishes within 5 seconds (checked by a test). \\
+NFR-5 & Performance & Tested on the bundled samples (up to about 3{,}000 rows): analysis finishes within 5 seconds (checked by a test). Staging a 100{,}000-row import takes about 6 seconds. \\
 NFR-6 & Auditability & The original rows are never changed; every fix is logged with the old and new value. \\
 NFR-7 & Usability & Results in plain English, light and dark themes. \\
 \bottomrule

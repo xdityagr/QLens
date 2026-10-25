@@ -1,6 +1,11 @@
 \chapter{System Design}
 \label{ch:design}
 
+\newcommand{\uishot}[4]{%
+  \begin{figure}[htbp]\centering
+  \IfFileExists{screenshots/#1.png}{\fcolorbox{rule}{white}{\includegraphics[width=0.985\textwidth,keepaspectratio]{screenshots/#1.png}}}{}
+  \caption[#3]{#4}\label{fig:ui-#2}\end{figure}}
+
 \section{Design Goals}
 \label{sec:goals}
 
@@ -172,16 +177,24 @@ saved\_queries & query\_runs (saved\_query\_id, may be NULL) & 1\,:\,N & set nul
 \subsection{Normalization of the QLens Schema}
 \label{sec:db-normal}
 
-In each table every non-key attribute depends on the key, the whole key, and nothing but the key, so
-the tables are in 3NF (and in BCNF, because every determinant is a key). Two points show this:
+In most tables every non-key attribute depends on the key, the whole key, and nothing but the key, and
+every determinant is a key, so these tables are in BCNF (and therefore in 3NF). Two points matter:
 \begin{enumerate}
   \item \textbf{No repeating groups.} The columns of a dependency's left-hand side are not stored as a
   list in one cell; they are rows of the table \code{fd\_lhs\_columns}. The same holds for the columns of
   a candidate key.
-  \item \textbf{Deliberate, controlled redundancy.} \code{dataset\_id} is stored in
-  \code{functional\_dependencies} even though it can be found through the column; this saves a join on
-  the Analyze screen. Derived attributes such as \code{is\_exact} are computed by the database, and a
-  saved query's \code{run\_count} is maintained by a trigger, so these copies can never disagree.
+  \item \textbf{Deliberate exceptions.} A few tables keep a value that could be derived, so strictly
+  they have a transitive dependency and are not in 3NF. Each one is a choice, and the database keeps it
+  correct:
+  \begin{itemize}
+    \item \code{dataset\_id} in \code{functional\_dependencies}, \code{duplicate\_groups} and
+    \code{dataset\_fixes} is determined by the column (each column belongs to one dataset); it is kept to
+    save a join on the Analyze screen.
+    \item \code{is\_exact} and \code{violation\_ratio} are derived from \code{violating\_rows} and
+    \code{row\_count}; they are generated columns, which PostgreSQL recomputes on every change.
+    \item A saved query's \code{run\_count} and \code{last\_run\_at} summarize its rows in
+    \code{query\_runs}; a trigger updates them, so they cannot disagree.
+  \end{itemize}
 \end{enumerate}
 
 \subsection{SQL Used in QLens}
@@ -274,6 +287,7 @@ the dependencies of \cref{fig:fee-example} and the candidate key (\code{student\
 Two dependencies hold on all but a few rows; they point to data errors.
 
 \InputIfFileExists{figures/fee-example}{}{}
+\uishot{final-analyze-dark}{analyze}{Analyze screen}{Analyze screen after clean-up: the row identity (candidate key Student Name + Month) and the functional dependencies between columns.}
 
 \paragraph{Step 2: clean the data.} The 8 rows with name variants (``riya sharma'') and the 5 rows with
 Mr.\ Gupta's old phone number are shown to the user with a suggested fix (the most common value). Similar
@@ -333,6 +347,7 @@ If either count is not zero, the transaction is rolled back. On the fee register
 \cref{lst:ddl} is part of the DDL it generates.
 
 \InputIfFileExists{figures/er-generated}{}{}
+\uishot{final-design-proposal-dark}{design}{Design screen}{Design screen: the proposed tables with their primary keys and foreign keys (the lines), before they are applied.}
 
 \begin{lstlisting}[float=tbp,caption={[Generated DDL]Part of the DDL generated for the fee register},label={lst:ddl}]
 CREATE TABLE ws_20.teachers (
@@ -418,6 +433,9 @@ CREATE TRIGGER log_row_change AFTER INSERT OR UPDATE OR DELETE ON ws_20.students
     FOR EACH ROW EXECUTE FUNCTION qlens.log_row_change();
 \end{lstlisting}
 
+\uishot{final-data-browse-dark}{browse}{Data page: Browse}{Data page, Browse tab: rows of the new tables with their foreign keys, and the history of changes recorded by the trigger.}
+\uishot{final-data-fk-dark}{constraint}{Data page: a constraint error}{Deleting a student who still has fee records: the \code{FOREIGN KEY} constraint (\code{ON DELETE RESTRICT}) refuses the change and the page explains why.}
+
 \paragraph{SQL.} The user can type SQL. A \code{SELECT} runs read-only; an \code{INSERT}, \code{UPDATE} or
 \code{DELETE} runs only after the user confirms it, as one transaction. Two extra views explain a query:
 \begin{itemize}
@@ -429,6 +447,8 @@ CREATE TRIGGER log_row_change AFTER INSERT OR UPDATE OR DELETE ON ws_20.students
   of every row versus an index scan), creates a B-tree index on a copy of the tables and measures how much
   faster the query becomes.
 \end{itemize}
+
+\uishot{final-stepthrough-dark}{step}{Step through}{Step through: the query evaluated in relational-algebra order; here the grouping step turns 3{,}000 rows into 8 groups.}
 
 \paragraph{Ask AI.} The user can ask a question in plain English. An optional assistant (Gemini) answers
 by calling read-only tools that run SQL, and shows the SQL it used. On the Design screen the same assistant
@@ -468,12 +488,3 @@ The app has five steps: Import, Analyze, Design, Data and History. Each generate
 on every screen. \Cref{fig:ui-analyze,fig:ui-design,fig:ui-browse,fig:ui-constraint,fig:ui-step} show the
 main screens with the fee register; more are in the appendix.
 
-\newcommand{\uishot}[4]{%
-  \begin{figure}[htbp]\centering
-  \IfFileExists{screenshots/#1.png}{\fcolorbox{rule}{white}{\includegraphics[width=0.985\textwidth,keepaspectratio]{screenshots/#1.png}}}{}
-  \caption[#3]{#4}\label{fig:ui-#2}\end{figure}}
-\uishot{final-analyze-dark}{analyze}{Analyze screen}{Analyze screen after clean-up: the row identity (candidate key Student Name + Month) and the functional dependencies between columns.}
-\uishot{final-design-proposal-dark}{design}{Design screen}{Design screen: the proposed tables with their primary keys and foreign keys (the lines), before they are applied.}
-\uishot{final-data-browse-dark}{browse}{Data page: Browse}{Data page, Browse tab: rows of the new tables with their foreign keys, and the history of changes recorded by the trigger.}
-\uishot{final-data-fk-dark}{constraint}{Data page: a constraint error}{Deleting a student who still has fee records: the \code{FOREIGN KEY} constraint (\code{ON DELETE RESTRICT}) refuses the change and the page explains why.}
-\uishot{final-stepthrough-dark}{step}{Step through}{Step through: the query evaluated in relational-algebra order; here the grouping step turns 3{,}000 rows into 8 groups.}

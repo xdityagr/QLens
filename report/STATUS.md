@@ -1,6 +1,6 @@
 # Report status
 
-Build: `latexmk -g -pdf main.tex` -> `report/main.pdf`, 29 pages, no overfull boxes, no undefined references.
+Build: `latexmk -g -pdf main.tex` -> `report/main.pdf`, 30 pages, no overfull boxes, no undefined references.
 Title: "QLens: An Automated Relational Database Design and Normalization System".
 
 ## Approach
@@ -16,5 +16,5 @@ Tests: final run 507 backend passed (1 skipped), 204 frontend passed.
 
 ## Screenshots
 Body: final-analyze-dark, final-design-proposal-dark, final-data-browse-dark, final-data-fk-dark, final-stepthrough-dark.
-Appendix: final-design-dark (applied, 3,000 rows), final-data-sql-dark, final-perf-index-dark. (final-data-ask-answer-dark shows a rate-limit message, so it is not used.)
+Appendix: final-design-dark only (two full-width shots cannot share the appendix title page; the 30-page limit is reached).
 If final-*.png arrive, swap them into the uishot/appshot calls in chapters/design.tex and chapters/appendix.tex.

@@ -23,9 +23,18 @@ B-tree indexes, transactions and \code{GRANT}-based security. 507 backend and 20
   \item Lossless join, a theorem in the textbook, can be checked with one SQL query.
 \end{itemize}
 
-\paragraph{Limitations.} Dependencies are searched with at most two columns on the left-hand side and
-keys with at most three columns; one sheet is normalized at a time and only up to 3NF; and the results
-come from sample data, not a study with real users.
+\paragraph{Limitations.}
+\begin{itemize}
+  \item Dependencies are searched with at most two columns on the left-hand side and keys with at most
+  three columns; one sheet is normalized at a time and only up to 3NF.
+  \item Analysis was tested on the samples (up to about 3{,}000 rows). A sheet near the import limit
+  (100{,}000 rows, 60 columns) can be imported, but its analysis has not been measured and may be slow.
+  \item Query results are cut at 1{,}000 rows, but not by size, so very wide rows can still make a large
+  result.
+  \item The optional assistant sends the question, the table structure and up to 50 result rows to
+  Google Gemini; the free tier allows only about 20 requests a day.
+  \item The results come from sample data, not a study with real users.
+\end{itemize}
 
 \paragraph{Future work.} Support several sheets at once, detect multivalued dependencies for 4NF, and
 suggest indexes automatically from the query history.
