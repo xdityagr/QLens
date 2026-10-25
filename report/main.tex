@@ -1,0 +1,115 @@
+% ================================================================================================
+%  QLens: project report (B.Tech CSE, Relational Database Management Systems laboratory)
+%  Build:  latexmk -pdf main.tex      (or .\build.ps1 / make)
+% ================================================================================================
+\documentclass[12pt,a4paper,oneside]{report}
+
+% ---- cover-page fields ---------------------------------------------------------------------------
+\newcommand{\reporttitle}{QLens: From a Messy Spreadsheet to a Verified Third-Normal-Form Database}
+% Names and registration numbers are table rows: one column per candidate, separated by &.
+\newcommand{\studentnames}{Aditya Gaur & Aditya Choudhary}
+\newcommand{\regnos}{Reg.\ No.\ 2502051500 & Reg.\ No.\ 2502051502}
+\newcommand{\supervisor}{Ms.\ Surabhi Agrawal}
+\newcommand{\academicyear}{2026--2027}
+\newcommand{\sectioninfo}{Semester III, Section K3 \textperiodcentered{} Relational Database Management Systems}
+
+\input{preamble}
+
+\begin{document}
+
+% ---- cover page (format: RDBMS_Project_Report_Format.docx) ---------------------------------------
+\begin{titlepage}
+  \centering
+  \setstretch{1.15}
+  \vspace*{0.4cm}
+  {\fontsize{12}{14}\selectfont A PROJECT REPORT\\ on\par}
+  \vspace{0.9cm}
+  {\fontsize{24}{30}\selectfont\bfseries \reporttitle\par}
+  \vspace{0.9cm}
+  {\fontsize{12}{15}\selectfont Submitted to Manipal University Jaipur\\
+    Towards the partial fulfillment for the Award of the Degree of\\[4pt]
+    {\bfseries B. Tech Computer Science and Engineering}\par}
+  \vspace{0.4cm}
+  {\fontsize{12}{14}\selectfont \academicyear\par}
+  \vspace{0.6cm}
+  {\fontsize{12}{14}\selectfont By\par}
+  \vspace{0.25cm}
+  {\fontsize{14}{17}\selectfont
+  \begin{tabular}{@{}c@{\hspace{1.6cm}}c@{}}
+    \studentnames\\[3pt]
+    \regnos
+  \end{tabular}\par}
+  \vspace{0.2cm}
+  {\fontsize{11}{13}\selectfont\color{muted}\sectioninfo\par}
+  \vspace{0.7cm}
+  \IfFileExists{figures/muj-logo.png}{%
+    \includegraphics[width=4.56in,height=0.9in,keepaspectratio]{figures/muj-logo.png}%
+  }{%
+    \fbox{\parbox[c][0.9in][c]{4.56in}{\centering\sffamily\small\color{muted}
+      [University logo: figures/muj-logo.png, 4.56\,in $\times$ 0.9\,in]}}%
+  }\par
+  \vspace{0.7cm}
+  {\fontsize{12}{14}\selectfont Under the guidance of\par}
+  \vspace{0.2cm}
+  {\fontsize{14}{17}\selectfont \supervisor\par}
+  \vfill
+  {\fontsize{12}{15}\selectfont Department of Artificial Intelligence and Machine Learning\\
+    Manipal University Jaipur\par}
+  \vspace{0.2cm}
+  {\fontsize{16}{19}\selectfont\bfseries Jaipur, Rajasthan\par}
+  \vspace*{0.3cm}
+\end{titlepage}
+
+% ---- front matter --------------------------------------------------------------------------------
+\pagenumbering{roman}
+\setcounter{page}{1}
+\InputIfFileExists{chapters/abstract}{}{}
+
+\cleardoublepage
+\phantomsection
+\addcontentsline{toc}{chapter}{Table of Contents}
+\renewcommand{\contentsname}{Table of Contents}
+{\setstretch{1.12}\tableofcontents}
+
+\cleardoublepage
+\phantomsection
+\addcontentsline{toc}{chapter}{List of Figures}
+{\setstretch{1.12}\listoffigures}
+
+\cleardoublepage
+\phantomsection
+\addcontentsline{toc}{chapter}{List of Tables}
+{\setstretch{1.12}\listoftables}
+
+\cleardoublepage
+\phantomsection
+\addcontentsline{toc}{chapter}{List of Listings and Algorithms}
+\chapter*{List of Listings and Algorithms}
+\markboth{List of Listings and Algorithms}{}
+{\setstretch{1.12}\makeatletter\@starttoc{lol}\makeatother\par\medskip
+ \makeatletter\@starttoc{loa}\makeatother}
+
+% ---- main matter ---------------------------------------------------------------------------------
+\cleardoublepage
+\pagenumbering{arabic}
+\setcounter{page}{1}
+
+\InputIfFileExists{chapters/introduction}{}{}
+\InputIfFileExists{chapters/requirements}{}{}
+\InputIfFileExists{chapters/design}{}{}
+\InputIfFileExists{chapters/conclusion}{}{}
+
+% ---- references ----------------------------------------------------------------------------------
+\cleardoublepage
+\phantomsection
+\addcontentsline{toc}{chapter}{References}
+\renewcommand{\bibname}{References}
+\markboth{References}{}
+\bibliographystyle{IEEEtran}
+{\setstretch{1.1}\small\bibliography{refs}}
+
+% ---- appendix ------------------------------------------------------------------------------------
+\appendix
+\InputIfFileExists{chapters/appendix}{}{}
+
+\end{document}

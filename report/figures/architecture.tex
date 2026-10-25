@@ -1,0 +1,100 @@
+\begin{figure}[tbp]
+\centering
+\resizebox{\linewidth}{!}{%
+% Layered architecture of QLens: browser SPA, FastAPI application, two kinds of database connection,
+% and the PostgreSQL cluster with the qlens schema and the per-workspace schemas and role.
+\begin{tikzpicture}[
+    tier/.style={draw=#1!70!black, fill=#1!5, line width=0.7pt, rounded corners=5pt},
+    chip/.style={draw=#1!75!black, fill=white, line width=0.5pt, rounded corners=2.5pt, inner xsep=3pt,
+      inner ysep=2.5pt, font=\sffamily\scriptsize, align=center, minimum height=5.5mm},
+    chip/.default=lane0,
+    todo/.style={dash pattern=on 2pt off 1.5pt},
+    tiername/.style={font=\sffamily\small\bfseries, anchor=north west, color=#1!75!black},
+    note/.style={font=\sffamily\scriptsize\color{muted}, align=left},
+    db/.style={cylinder, shape border rotate=90, aspect=0.16, draw=#1!75!black, fill=#1!10,
+      line width=0.6pt, minimum width=2.6cm, minimum height=2.15cm, align=center,
+      font=\sffamily\tiny},
+    flow/.style={-{Stealth[length=5pt,width=4pt]}, line width=0.7pt, draw=ink!80},
+  ]
+  % ---------------- client tier --------------------------------------------------------------------
+  \draw[tier=lane0] (0,0) rectangle (15.2,2.55);
+  \node[tiername=lane0] at (0.15,2.5) {Client tier \textperiodcentered{} browser};
+  \node[note, anchor=north east] at (15.05,2.48) {React 19 single-page app \textperiodcentered{} Vite 8, TypeScript, Tailwind CSS 4};
+  \foreach \t [count=\i from 0] in {Sign-in, Workspaces, Import, Analyze, Design canvas, Query, Performance, History}
+    \node[chip=lane0, minimum width=1.68cm] at (1.0+\i*1.88,1.35) {\t};
+  \node[note, anchor=south west] at (0.2,0.12)
+    {TanStack Query cache \textperiodcentered{} React Flow (ER diagram, plan tree) \textperiodcentered{}
+     CodeMirror SQL editor \textperiodcentered{} lane colours, light/black themes, reduced-motion aware};
+
+  % ---------------- HTTP boundary ------------------------------------------------------------------
+  \draw[flow, {Stealth[length=5pt,width=4pt]}-{Stealth[length=5pt,width=4pt]}] (7.6,-0.05) -- (7.6,-0.95);
+  \node[note, anchor=west] at (7.75,-0.5) {HTTP + JSON on \code{/api/*} \textperiodcentered{} session in an \code{httpOnly} cookie};
+
+  % ---------------- application tier ---------------------------------------------------------------
+  \draw[tier=lane1] (0,-1.0) rectangle (15.2,-6.15);
+  \node[tiername=lane1] at (0.15,-1.05) {Application tier \textperiodcentered{} FastAPI on Python 3.13};
+  \node[note, anchor=north east] at (15.05,-1.1) {hand-written SQL through psycopg 3 \textperiodcentered{} no ORM};
+  % modules, row 1
+  \node[chip=lane1, minimum width=2.2cm] (m1) at (1.35,-2.05) {auth\\[-1pt]\tiny argon2id, sessions};
+  \node[chip=lane1, minimum width=2.2cm] (m2) at (3.75,-2.05) {workspaces\\[-1pt]\tiny role + schemas};
+  \node[chip=lane1, minimum width=2.2cm] (m3) at (6.15,-2.05) {ingest\\[-1pt]\tiny parse, stage, infer};
+  \node[chip=lane1, minimum width=2.6cm] (m4) at (8.75,-2.05) {analysis\\[-1pt]\tiny discover, cleanup, fd\_algebra};
+  \node[chip=lane1, minimum width=2.6cm] (m5) at (11.55,-2.05) {design\\[-1pt]\tiny naming, proposal, ddl, apply};
+  \node[chip=lane1, minimum width=1.7cm, todo] (m6) at (14.15,-2.05) {query\\[-1pt]\tiny validate, sandbox};
+  % modules, row 2
+  \node[chip=lane1, minimum width=2.6cm, todo] (m7) at (1.55,-3.05) {perf lab\\[-1pt]\tiny lab, explain, advisor};
+  \node[chip=lane1, minimum width=2.4cm, todo] (m8) at (4.3,-3.05) {stepthrough\\[-1pt]\tiny pglast stages};
+  \node[chip=lane1, minimum width=3.0cm, todo] (m9) at (7.25,-3.05) {assistant\\[-1pt]\tiny validated tools, conversations};
+  \node[note, anchor=west, align=left] at (8.85,-3.05) {solid: built and tested\\dashed: specified, in progress};
+  % connection paths
+  \node[chip=lane4, minimum width=6.6cm, minimum height=1.25cm, anchor=north west] (pool) at (0.3,-3.85)
+    {\textbf{psycopg ConnectionPool} (1--10 connections) as \code{qlens\_app}\\
+     owner of every schema \textperiodcentered{} one transaction per request,\\
+     committed before the response is sent};
+  \node[chip=lane3, minimum width=7.3cm, minimum height=1.25cm, anchor=north east] (sbx) at (14.9,-3.85)
+    {\textbf{Sandbox connection} per user query as \code{qlens\_ws\_<id>}\\
+     LOGIN, NOINHERIT, CONNECTION LIMIT 3 \textperiodcentered{} read-only by default\\
+     \code{statement\_timeout} 5\,s \textperiodcentered{} idle-in-transaction 10\,s};
+  \foreach \m in {m1,m2,m3,m4,m5} \draw[line width=0.4pt, draw=lane4!60] (\m.south) -- (\m.south |- pool.north);
+  \draw[line width=0.4pt, draw=lane3!60, todo] (m6.south) -- (m6.south |- sbx.north);
+  \draw[line width=0.4pt, draw=lane3!60, todo] (m9.south) -- (m9.south |- sbx.north);
+
+  % ---------------- external service ---------------------------------------------------------------
+  \node[chip=lane6, todo, align=center, minimum width=2.4cm] (gem) at (13.6,-3.05) {Gemini API\\[-1pt]\tiny optional, GEMINI\_API\_KEY};
+  \draw[flow, todo, draw=lane6!80!black] (m9.east) -- (gem.west);
+
+  % ---------------- data tier ----------------------------------------------------------------------
+  \draw[tier=lane4] (0,-7.0) rectangle (15.2,-13.0);
+  \node[tiername=lane4] at (0.15,-7.05) {Data tier \textperiodcentered{} PostgreSQL 18 (private cluster, port 5544, database \code{qlens})};
+  \node[note, anchor=north east] at (15.05,-7.1) {extension \code{pg\_trgm}};
+  \node[db=lane1, minimum width=4.3cm, minimum height=3.3cm] (qs) at (2.55,-10.1)
+    {\textbf{schema \code{qlens}}\\[2pt] 22 tables + migrations log\\ 4 triggers, 3 views\\
+     PL/pgSQL: \code{check\_fd},\\ \code{is\_unique}, \code{try\_date}};
+  \draw[lane5!80!black, line width=0.6pt, rounded corners=4pt, dash pattern=on 3pt off 2pt]
+    (5.25,-7.65) rectangle (14.95,-12.8);
+  \node[font=\sffamily\scriptsize\bfseries, color=lane5!80!black, anchor=north west] at (5.35,-7.7)
+    {one set per workspace \code{<id>} (created with the workspace, dropped with it)};
+  \node[db=lane0] (src) at (6.95,-10.35) {\textbf{\code{ws\_<id>\_src}}\\[2pt] \code{\_raw} (text, never edited)\\ \code{\_staging} (typed, cleaned)};
+  \node[db=lane3] (main) at (10.1,-10.35) {\textbf{\code{ws\_<id>}}\\[2pt] generated 3NF tables\\ view \code{original\_sheet}};
+  \node[db=lane2] (lab) at (13.3,-10.35) {\textbf{\code{ws\_<id>\_lab}}\\[2pt] copy for EXPLAIN,\\ scaling, index trials};
+  \node[font=\sffamily\scriptsize, color=lane5!80!black] at (10.1,-12.45)
+    {role \code{qlens\_ws\_<id>}: USAGE + SELECT on these schemas only};
+
+  % ---------------- connections into the data tier -------------------------------------------------
+  \draw[flow, draw=lane4!80!black] ([xshift=-1.6cm]pool.south) -- ([xshift=-1.6cm]pool.south |- qs.north)
+    node[pos=0.45, left, note] {full access};
+  \draw[flow, draw=lane4!80!black] ([xshift=1.4cm]pool.south) |- (6.2,-7.35) -| (src.north);
+  \draw[flow, draw=lane4!80!black] (6.2,-7.35) -| ([xshift=-2mm]main.north);
+  \node[note, anchor=south] at (4.5,-7.33) {DDL, COPY, cleanup};
+  \draw[flow, draw=lane3!90!black, todo] ([xshift=-1.2cm]sbx.south) -- ++(0,-0.5) -| ([xshift=6mm]src.north);
+  \draw[flow, draw=lane3!90!black, todo] ([xshift=1.0cm]sbx.south) -- ++(0,-0.5) -| ([xshift=3mm]main.north);
+  \draw[flow, draw=lane3!90!black, todo] ([xshift=2.9cm]sbx.south) -- ([xshift=2.9cm]sbx.south |- lab.north);
+  \node[note, anchor=west] at ([xshift=3.0cm]sbx.south |- 0,-6.5) {SELECT only};
+  % denied path to the metadata schema
+  \draw[line width=0.7pt, draw=lane7, dash pattern=on 2pt off 1.5pt] ([xshift=-3.3cm]sbx.south) -- ++(0,-0.35) -| (4.2,-8.62);
+  \node[text=lane7, font=\bfseries\small] at (4.2,-8.62) {\ding{55}};
+  \node[note, text=lane7, anchor=west] at (4.35,-8.95) {no privilege on \code{qlens}};
+\end{tikzpicture}
+}
+\caption{Layered architecture of QLens. Application code reaches PostgreSQL through two kinds of connection: the shared pool as the owning role, and a per-query sandbox connection as the workspace's own low-privilege LOGIN role.}\label{fig:architecture}
+\end{figure}

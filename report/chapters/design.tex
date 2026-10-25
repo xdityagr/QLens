@@ -1,0 +1,676 @@
+\chapter{System Design}
+\label{ch:design}
+
+This chapter describes how QLens is built and, more importantly, why it is built that way. The
+database is not an afterthought in this project: the metadata schema, the dependency discovery, the
+clean-up queries and the lossless-join check are all expressed in PostgreSQL, and the application
+code around them is deliberately thin. Where a component is still being finished at the time of
+writing, its status is marked with \stdone, \stwip{} or \stplan{} in the same way as in the
+previous chapter.
+
+\providecommand{\wsn}[1]{\code{ws\_\textless id\textgreater#1}}
+
+% =====================================================================================================
+\section{Design Goals}
+\label{sec:design-goals}
+
+Five goals shaped every decision below. They are listed in the order in which they win when two of
+them conflict.
+
+\begin{description}
+  \item[Correctness and losslessness.] A normalized database is only useful if it holds exactly the
+  information the spreadsheet held. The system therefore never rewrites the user's original rows:
+  the imported data is kept untouched in a \code{\_raw} table, all clean-up happens in a
+  \code{\_staging} copy with an audit trail, and a design is marked \emph{applied} only after the
+  tables rebuilt from it reproduce the staging table exactly. This is enforced by a database
+  \code{CHECK} constraint and not merely by application code (\cref{sec:design-apply}).
+
+  \item[Visible SQL.] The target user is a learner or a small-business owner who will eventually
+  have to read SQL. Every dependency, every merge and every generated table is therefore backed by a
+  statement the user can inspect: the discovery functions are ordinary PL/pgSQL, the generated
+  \code{CREATE TABLE} script is shown before it runs, and the query screens display the SQL next to
+  the result.
+
+  \item[Isolation.] Several workspaces share one PostgreSQL cluster, and users type arbitrary SQL.
+  A workspace must not be able to read another workspace's data, change its own data from the query
+  box, or monopolise the server. This is solved with database privileges, per-workspace roles and
+  timeouts rather than by filtering SQL text (\cref{sec:design-security}).
+
+  \item[Explainability.] Each suggestion carries a sentence in plain language (``Each
+  \code{batch} has exactly one \code{teacher}''), the measure behind it (rows that violate it) and a
+  way to reject it. The same principle applies to normalization itself: each proposed table is
+  accompanied by the dependency that justifies it.
+
+  \item[Polish.] A tool meant for non-specialists must feel finished: a consistent design system
+  with a pure-black dark theme and a light theme, meaningful empty and error states, and responses
+  that are fast enough to feel interactive (the 3,000-row fee register is analysed in about
+  $0.3$ seconds).
+\end{description}
+
+% =====================================================================================================
+\section{System Architecture}
+\label{sec:architecture}
+
+\InputIfFileExists{figures/architecture}{}{}
+
+QLens is a conventional three-tier web application whose bottom tier does unusually much work.
+\Cref{fig:architecture} shows the layers; the paragraphs below describe each of them from the
+browser downwards.
+
+\paragraph{Presentation layer.} The user interface is a single-page application written in React
+and TypeScript and bundled with Vite \cite{react}. It keeps no authoritative state of its own:
+every screen (Import, Analyze, Design, Query) is a view over data fetched from the API, and a
+page reload reconstructs it from the server. The session is carried by an \code{httpOnly},
+\code{SameSite=Lax} cookie, so scripts running in the page cannot read it.
+
+\paragraph{Application layer.} The API is a FastAPI service \cite{fastapi} organised as one router
+per concern (authentication, workspaces, ingest, analysis, design, query). Routers validate input
+with typed request models, call a service module and return typed response models. The services
+are plain functions that take a database connection; they contain orchestration but very little
+computation, because the computation is done in SQL.
+
+\paragraph{Connection handling.} Application connections are drawn from a \code{psycopg}~3 pool
+\cite{psycopg} (between one and ten connections). A FastAPI dependency opens one transaction per
+request, commits on success and rolls back on any exception. The dependency is declared with
+function scope, which makes FastAPI run its exit code, and therefore the \code{COMMIT}, \emph{before}
+the response is sent. With the default request scope the commit would run after the client had
+already received a success status, so a failing commit would be invisible and an immediate
+follow-up request could miss the write. Committing first removes that class of error.
+
+\paragraph{Sandbox connections.} User-written queries do not use the pool above. For each
+workspace the application opens a connection as that workspace's own PostgreSQL role (created with
+the workspace, \cref{sec:design-security}), which can read only the workspace's schemas and is
+read-only by default. The role's password is derived from a server secret with HMAC, so it never
+has to be stored.
+
+\paragraph{Data layer.} All state lives in one PostgreSQL~18 cluster \cite{postgres18docs} that
+the project starts privately on a non-default port. It contains four kinds of schema:
+\begin{itemize}
+  \item \code{qlens}: the metadata schema owned by the application (21 tables, 3 views, 2 trigger
+  functions, the discovery functions \code{check\_fd}, \code{is\_unique} and \code{try\_date});
+  \item \wsn{}: the user's normalized tables after a design has been applied, and the only schema
+  that queries run against by default;
+  \item \wsn{\_src}: the imported data as two tables, \code{\_raw} (as parsed, never modified)
+  and \code{\_staging} (typed, cleaned, with a surrogate \code{\_row\_id});
+  \item \wsn{\_lab}: a copy of the normalized tables used by the performance lab, so that index
+  experiments never touch the main schema (\stplan).
+\end{itemize}
+
+\begin{table}[htbp]
+  \caption{Technology stack}
+  \label{tab:stack}
+  \centering
+  \begin{tabularx}{\linewidth}{@{}l l X@{}}
+    \toprule
+    Layer & Technology & Role \\
+    \midrule
+    Database & PostgreSQL 18, \code{pg\_trgm}, PL/pgSQL & Storage, dependency discovery, similarity search, constraints \\
+    Backend & Python 3.13, FastAPI, Pydantic & HTTP API, validation, orchestration \\
+    DB driver & psycopg 3 with \code{psycopg\_pool} & Parameterised queries, pooling, safe identifier quoting \\
+    Security & argon2-cffi, \code{hashlib} SHA-256 & Password hashing, session-token hashing \\
+    Import & \code{csv}, openpyxl & CSV and XLSX parsing \\
+    Frontend & React, TypeScript, Vite & Single-page interface \\
+    Testing & pytest, randomised property tests, Vitest & 212 backend tests, frontend unit tests \\
+    \bottomrule
+  \end{tabularx}
+\end{table}
+
+\paragraph{Why logic sits in the database.} Discovering functional dependencies means grouping the
+whole table once per candidate; moving 100,000 rows into Python for each of several hundred
+candidates would dominate the running time and would also hide the logic from a reader who knows
+SQL. Keeping the work in PL/pgSQL lets the planner use hash aggregation, keeps the data inside the
+server, and makes each measurement a query that can be re-run by hand. The only algorithms
+implemented outside SQL are the ones that operate on \emph{sets of dependencies} rather than rows
+(closure, minimal cover, synthesis), because they are small, pure and easy to property-test.
+
+% =====================================================================================================
+\section{Detailed Design Methodologies}
+\label{sec:detailed-design}
+
+% -----------------------------------------------------------------------------------------------------
+\subsection{Metadata Schema}
+\label{sec:design-metadata}
+
+The \code{qlens} schema stores everything the application knows \emph{about} the user's data. It is
+split into five areas: accounts (\tbl{users}, \tbl{sessions}); workspaces and the imported dataset
+(\tbl{workspaces}, \tbl{datasets}, \tbl{dataset\_columns}); analysis results (candidate keys,
+dependencies, duplicate groups, the fix log); the proposed design (\tbl{schema\_proposals},
+\tbl{proposed\_tables}, \tbl{proposed\_columns}, unique keys); and query history with the
+performance lab (\tbl{saved\_queries}, \tbl{query\_runs}, \tbl{nl\_questions},
+\tbl{explain\_snapshots}, \tbl{index\_experiments}). \Cref{fig:er1,fig:er2} show the
+entity--relationship diagram in two parts.
+
+\InputIfFileExists{figures/er-part1}{}{}
+\InputIfFileExists{figures/er-part2}{}{}
+
+The schema follows a small set of conventions, stated at the top of the migration file so they are
+applied uniformly. Surrogate keys are \code{bigint GENERATED ALWAYS AS IDENTITY}; the exceptions
+are the session table (its natural key is the token hash) and the junction tables (composite keys).
+Every timestamp is \code{timestamptz NOT NULL DEFAULT now()}. Closed vocabularies are
+\code{text} with a \code{CHECK (x IN (...))} constraint, which is easier to evolve than an
+enumerated type. Every column that later becomes a SQL identifier (column names, proposed table
+names) is constrained to the pattern \code{\^{}[a-z\_][a-z0-9\_]\{0,62\}\$}, so it is always safe to
+quote and always fits PostgreSQL's 63-byte identifier limit.
+
+\Cref{tab:dd} gives a data dictionary for the six tables that carry the most design weight; the
+remaining tables are variations on the same patterns.
+
+\begin{table}[htbp]
+  \caption{Data dictionary of the key metadata tables (abridged to the most significant columns)}
+  \label{tab:dd}
+  \small
+  \begin{tabularx}{\linewidth}{@{}l l l X@{}}
+    \toprule
+    Table & Column & Type & Constraint and meaning \\
+    \midrule
+    \tbl{datasets} & \code{workspace\_id} & bigint & \UQ, \FK{} \tbl{workspaces}; one dataset per workspace \\
+     & \code{status} & text & \code{CHECK IN ('imported','analyzed','applied')} \\
+     & \code{column\_count} & smallint & \code{CHECK BETWEEN 1 AND 60} \\
+    \addlinespace
+    \tbl{dataset\_columns} & \code{name} & text & identifier pattern; \UQ{} with \code{dataset\_id} \\
+     & \code{inferred\_type} & text & integer, numeric, boolean, date or text \\
+     & \code{null\_count}, \code{distinct\_count} & integer & import-time profile used to prune the search \\
+    \addlinespace
+    \tbl{functional\_dependencies} & \code{rhs\_column\_id} & bigint & \FK{} \tbl{dataset\_columns}; LHS in \tbl{fd\_lhs\_columns} \\
+     & \code{violating\_rows} & integer & rows that must change for the FD to hold; $\le$ \code{row\_count} \\
+     & \code{is\_exact} & boolean & \GN{} \code{violating\_rows = 0} \\
+     & \code{violation\_ratio} & numeric & \GN{} \code{violating\_rows / NULLIF(row\_count,0)} \\
+     & \code{accepted} & boolean & \code{DEFAULT true}; false once the user rejects it \\
+    \addlinespace
+    \tbl{duplicate\_groups} & \code{canonical\_value} & text & spelling all members merge into \\
+     & \code{confidence} & text & \code{same\_normalized} or \code{similar} \\
+     & \code{status} & text & pending, merged or dismissed \\
+    \addlinespace
+    \tbl{schema\_proposals} & \code{status} & text & draft, applied or superseded \\
+     & \code{lossless\_ok} & boolean & result of the \code{EXCEPT ALL} comparison \\
+     & \code{mismatch\_rows} & integer & rows differing in either direction \\
+    \addlinespace
+    \tbl{query\_runs} & \code{source}, \code{target} & text & typed, english, stepthrough, perf; main or lab \\
+     & \code{status} & text & ok, error or timeout \\
+     & \code{error\_message} & text & NULL exactly when \code{status = 'ok'} \\
+    \bottomrule
+  \end{tabularx}
+\end{table}
+
+\paragraph{Constraint highlights.} A few constraints carry real design intent and are worth
+spelling out.
+
+\begin{itemize}
+  \item \emph{Generated columns.} \code{is\_exact} and \code{violation\_ratio} in
+  \tbl{functional\_dependencies}, and \code{speedup} in \tbl{index\_experiments}, are
+  \code{GENERATED ALWAYS AS (...) STORED}. They are derived from the stored counts, so no code path
+  can write a dependency that claims to be exact while recording violations. The division uses
+  \code{NULLIF(row\_count, 0)} so an empty table gives \code{NULL} and not an error.
+  \item \emph{Partial unique indexes.} A dataset may have at most one draft proposal and at most
+  one applied proposal, but any number of superseded ones. Two partial unique indexes express this
+  directly (\cref{lst:partial}); the applied design therefore stays applied while a new draft is
+  being edited.
+  \item \emph{The lossless gate.} \tbl{schema\_proposals} carries
+  \code{CHECK (status <> 'applied' OR lossless\_ok IS TRUE)}. The \code{IS TRUE} matters: a plain
+  \code{lossless\_ok} would evaluate to \code{NULL} for a proposal that was never checked, and a
+  \code{CHECK} constraint accepts \code{NULL}. With \code{IS TRUE} an unchecked proposal cannot be
+  marked applied.
+  \item \emph{Biconditional checks.} In \tbl{proposed\_columns},
+  \code{CHECK ((role = 'fk') = (references\_table\_id IS NOT NULL))} states that a column is a
+  foreign key exactly when it references a table. In \tbl{query\_runs}, a run has an error message
+  exactly when it did not succeed.
+  \item \emph{Cascades and \code{SET NULL}.} Deleting a user, workspace or dataset cascades down
+  through every dependent table, so no orphan rows can survive. \code{SET NULL} is used only where
+  history must outlive its parent: deleting a saved query keeps its runs, and losing a source column
+  does not delete the design column derived from it.
+\end{itemize}
+
+\begin{lstlisting}[language=SQL,caption={The two partial unique indexes on proposals (from \code{001\_schema.sql})},label={lst:partial}]
+CREATE UNIQUE INDEX schema_proposals_one_draft_idx
+    ON qlens.schema_proposals (dataset_id) WHERE status = 'draft';
+CREATE UNIQUE INDEX schema_proposals_one_applied_idx
+    ON qlens.schema_proposals (dataset_id) WHERE status = 'applied';
+\end{lstlisting}
+
+\paragraph{Index justification.} PostgreSQL does not index foreign-key columns automatically, and
+an unindexed foreign key makes every cascading delete a sequential scan of the child table.
+Each foreign-key column is therefore either the leading column of a \code{UNIQUE} or primary-key
+index, or has an explicit index with a comment stating what it serves. \Cref{tab:indexes} lists the
+indexes that exist for a reason beyond the cascade.
+
+\begin{table}[htbp]
+  \caption{Selected indexes and the queries they serve}
+  \label{tab:indexes}
+  \small
+  \begin{tabularx}{\linewidth}{@{}l l X@{}}
+    \toprule
+    Index & Definition & Serves \\
+    \midrule
+    \code{workspaces\_owner\_id\_name\_key} & \code{UNIQUE (owner\_id, name)} & Workspace list of one user; rejects duplicate names \\
+    \code{candidate\_keys\_dataset\_idx} & \code{(dataset\_id, key\_size)} & Keys of a dataset, smallest first \\
+    \code{dataset\_fixes\_dataset\_idx} & \code{(dataset\_id, created\_at DESC)} & Edit history, newest first \\
+    \code{query\_runs\_workspace\_time\_idx} & \code{(workspace\_id, created\_at DESC)} & History page, workspace summary, \code{v\_slow\_queries} \\
+    \code{query\_runs\_saved\_query\_time\_idx} & \code{(saved\_query\_id, created\_at) WHERE saved\_query\_id IS NOT NULL} & \code{v\_saved\_query\_trend}; partial because most runs are ad hoc \\
+    \code{proposed\_columns\_references\_idx} & \code{(references\_table\_id) WHERE NOT NULL} & Relationship lines in the diagram \\
+    \code{sessions\_user\_id\_idx} & \code{(user\_id)} & Log out everywhere; cascade from \tbl{users} \\
+    \bottomrule
+  \end{tabularx}
+\end{table}
+
+% -----------------------------------------------------------------------------------------------------
+\subsection{Import and SQL Type Inference}
+\label{sec:design-import}
+
+The importer reads CSV or XLSX, normalises each header to a safe identifier (lower case, runs of non-alphanumeric
+characters replaced by underscores) while remembering the original label for display, and
+loads every cell as text into \code{\_raw}. Loading as text first is deliberate: it can never fail
+on a malformed value, and it keeps an exact record of what the user uploaded.
+
+Types are then inferred \emph{in SQL}, from the data. For each column the importer asks
+PostgreSQL whether every non-empty value matches a pattern for, boolean, integer,
+numeric and date patterns; the narrowest type that every value satisfies is chosen, and \code{text} is the
+fallback. The same query computes the profile that later steps depend on: null count, distinct
+count and a few sample values.
+
+Dates are the delicate case. A value that merely \emph{looks} like a date may not be one
+(\code{31/02/2026}), and casting it would raise an error and abort the whole import. The function
+\code{qlens.try\_date} (\cref{lst:trydate}) therefore returns \code{NULL} instead of failing. It
+accepts ISO dates and day-first dates, which is a deliberate choice: the sample data and the target
+users write \code{dd/mm/yyyy}, so \code{03/04/2026} is read as 3~April. The inference query wraps the
+call in a \code{CASE} so that the PL/pgSQL function runs only on values that already match a
+date-shaped regular expression, which avoids paying a function call for every cell of every text column.
+
+\begin{lstlisting}[language=SQL,caption={Safe date parsing used by type inference (from \code{003\_ingest.sql})},label={lst:trydate}]
+CREATE FUNCTION qlens.try_date(p text) RETURNS date
+LANGUAGE plpgsql STABLE AS $$
+BEGIN
+    IF p ~ '^\d{4}-\d{2}-\d{2}$' THEN
+        RETURN p::date;
+    ELSIF p ~ '^\d{1,2}[/-]\d{1,2}[/-]\d{4}$' THEN
+        RETURN to_date(replace(p, '-', '/'), 'DD/MM/YYYY');
+    END IF;
+    RETURN NULL;
+EXCEPTION WHEN others THEN
+    RETURN NULL;
+END;
+$$;
+\end{lstlisting}
+
+Finally the typed table \code{\_staging} is created from \code{\_raw} using the inferred types
+(casting dates through \code{try\_date}) and given a \code{\_row\_id} identity column. All later
+analysis and clean-up operate on \code{\_staging}.
+
+% -----------------------------------------------------------------------------------------------------
+\subsection{Dependency and Key Discovery in SQL}
+\label{sec:design-discovery}
+
+\InputIfFileExists{figures/pipeline}{}{}
+
+The analysis stage turns a flat table into a list of candidate keys and functional dependencies
+\cite{codd1970}. \Cref{fig:pipeline} shows where it sits in the overall pipeline. The design rests
+on one observation: whether a dependency $X \to A$ holds, and how badly it is broken, can be read off
+a single grouped query.
+
+\paragraph{The measuring function.} \Cref{lst:checkfd} is \code{qlens.check\_fd}. For a table,
+a list of left-hand-side columns and one right-hand-side column it returns four numbers. The inner
+query \code{c} counts rows per (LHS, RHS) pair. The outer query \code{g} then groups by LHS alone,
+keeping the total \code{n} and the count of the most common RHS value \code{keep}. If $X \to A$
+holds exactly, every group has a single RHS value and \code{n = keep}. Summing \code{n - keep} over
+groups gives the number of rows that would have to be changed for the dependency to hold, which is a
+$g_3$-style error measure: the minimum fraction of rows to delete or correct so that the dependency
+becomes exact. Schema and table names enter the dynamic SQL only through \code{format('\%I')}, so
+they are always correctly quoted identifiers.
+
+\begin{lstlisting}[language=SQL,caption={The dependency-measuring function (from \code{004\_analysis.sql}, comments shortened)},label={lst:checkfd}]
+CREATE FUNCTION qlens.check_fd(p_schema text, p_table text, p_lhs text[], p_rhs text)
+RETURNS TABLE (row_count bigint, lhs_values bigint, repeated_groups bigint, violating_rows bigint)
+LANGUAGE plpgsql STABLE AS $$
+DECLARE
+    t   text := format('%I.%I', p_schema, p_table);
+    lhs text;
+BEGIN
+    SELECT string_agg(format('%I', c), ', ') INTO lhs FROM unnest(p_lhs) AS c;
+    RETURN QUERY EXECUTE format(
+        'WITH c AS (SELECT %1$s, %2$I, count(*) AS cnt FROM %3$s GROUP BY %1$s, %2$I), '
+        '     g AS (SELECT %1$s, sum(cnt) AS n, max(cnt) AS keep FROM c GROUP BY %1$s) '
+        'SELECT (SELECT count(*) FROM %3$s), count(*), count(*) FILTER (WHERE n >= 2), '
+        '       coalesce(sum(n - keep), 0)::bigint FROM g',
+        lhs, p_rhs, t);
+END;
+$$;
+\end{lstlisting}
+
+The returned \code{repeated\_groups} is the number of LHS values that occur in at least two rows. It
+exists because a dependency that was never tested against a repeated value proves nothing: if every
+\code{student\_name} occurred exactly once, \code{student\_name} $\to$ anything would hold trivially.
+\code{NULL} is treated as an ordinary value (\code{GROUP BY} puts all nulls in one group), which
+matches how the normalized design will store it.
+
+\paragraph{Candidate keys.} \code{qlens.is\_unique} counts the rows and the distinct combinations
+of a column list and returns whether they are equal. The key search tries single columns, then pairs,
+then triples, and before calling the database it discards combinations that cannot possibly be keys
+using the import-time profile: a combination that contains any nulls is rejected (a key must be filled
+in on every row); and if the product of the columns' distinct counts is smaller than the row count the
+combination cannot be unique. Supersets of an already-found key are not reported again. Triples are
+tried only when no smaller key exists and the table is narrow.
+
+\paragraph{Candidate dependencies.} Single-column left-hand sides are tried for every pair of
+columns; two-column left-hand sides are tried only when at most 20 columns are eligible, because the
+number of pairs grows quadratically. A dependency is kept when it has at least two repeated groups and
+its violating rows number at most 2\% of the table (the \emph{approximate threshold}). Exact
+dependencies and near-misses are stored together; the generated column \code{is\_exact} separates them.
+The near-misses are the interesting ones for data quality: they are dependencies that \emph{ought}
+to hold but are broken by a few dirty rows, which is exactly the signature of an inconsistency such as
+one teacher recorded with two phone numbers.
+
+\paragraph{Noise suppression.} Naively, a wide table yields hundreds of true but useless
+dependencies. Six rules, all applied before anything is stored, keep the list short enough for a
+person to review.
+\begin{enumerate}
+  \item \emph{Eligible determinants only.} Boolean and constant columns cannot be determinants.
+  Numeric columns are treated as \emph{measures} (a fee, a quantity) unless their name ends in
+  \code{id}, \code{no}, \code{num}, \code{number} or \code{code}, in which case they are identifiers.
+  \item \emph{Keys are skipped.} A candidate key determines every other column, so dependencies
+  with a key on the left carry no information and are not tested.
+  \item \emph{Repeated evidence.} At least two LHS values must repeat (above).
+  \item \emph{Minimal left-hand sides.} A two-column LHS is not tested against a column that one of
+  its members already determines exactly, and an approximate pair dependency is dropped if one member
+  alone approximately determines the same column. A finer grouping can only have fewer violations, so
+  the pair would merely isolate the dirty rows and masquerade as a clean dependency.
+  \item \emph{Root cause.} If $X \to Z$ holds exactly and $Z \to A$ nearly holds, the broken
+  $X \to A$ is the same inconsistency seen through $Z$, so only $Z \to A$ is kept. Because the groups of
+  $Z$ are unions of the groups of $X$, $Z \to A$ never has fewer violations than $X \to A$, so no
+  comparison of counts is needed. Columns that determine each other are ordered by position so exactly
+  one of them keeps the dependency.
+  \item \emph{Narrow tables only for pairs.} The 20-column limit above.
+\end{enumerate}
+
+\paragraph{Re-analysis.} The whole analysis runs in one transaction that deletes and rebuilds the
+candidate keys and dependencies, then rebuilds the pending duplicate groups. A rejection made by the
+user is remembered by what the dependency \emph{says} (its LHS set and RHS) and not by its row id,
+so it survives re-analysis. On the 3,000-row fee register the complete analysis,
+including the SQL passes and the duplicate search, takes about $0.3$~s.
+
+\screenshot{analyze-issues-dark}{Analyze: dependencies, keys and data issues}{fig:analyze}
+
+% -----------------------------------------------------------------------------------------------------
+\subsection{Data Clean-up}
+\label{sec:design-cleanup}
+
+Real spreadsheets contain spellings that differ by a character (\code{Sneha Reddy},
+\code{Sneha Reddi}) and cells that disagree with the rest of their row group. Both would otherwise
+become violations in the dependency list and block a clean design. The clean-up module finds them
+and offers a fix; every fix is applied to \code{\_staging} only and recorded in \tbl{dataset\_fixes}
+(kind, column, old value, new value, rows affected), so the original upload can always be recovered
+from \code{\_raw} and every change can be explained.
+
+\paragraph{Near-duplicate detection.} Two kinds of group are produced.
+\begin{itemize}
+  \item \emph{Certain duplicates} (\code{same\_normalized}): spellings that become equal after
+  trimming, lower-casing and collapsing spaces and full stops (\code{Mrs. Rao} and \code{Mrs Rao}).
+  \item \emph{Probable duplicates} (\code{similar}): spellings whose trigram similarity exceeds
+  $0.5$, found with the \code{pg\_trgm} extension \cite{pgtrgm}. Comparing every pair of $d$
+  distinct values is quadratic in $d$. The candidate values are therefore copied into a temporary
+  table with a GIN index on \code{gin\_trgm\_ops}, and a self-join using the indexed \code{\%}
+  operator finds the look-alikes of each value without scanning all pairs. For 5,000 distinct values
+  the search finishes in about one second, and 5,000 is the enforced upper limit for a column.
+\end{itemize}
+The join is written as a \code{MATERIALIZED} common table expression so the planner cannot choose a
+cheap equality test as the join key and pair all digit-free values with each other.
+
+\paragraph{Frequency asymmetry.} Similarity alone produces false positives: \code{Ananya} and
+\code{Anaya} may both be real people with ten rows each. Two further rules reduce them.
+Values whose digits differ are different things (\code{Foundation 9} against \code{Foundation 10},
+two phone numbers, bills \code{KB-0001} and \code{KB-0008}), and a typo is rarer than the correct
+spelling, so a pair qualifies only if the rarer value has at most one third of the rows of the more
+frequent one. Qualifying pairs are merged into clusters with a union-find structure, and the canonical
+spelling of a cluster is its most frequent member. The sample fee register plants eight rows with
+variant student names (four students, each spelled in lower case or with a doubled space in two rows);
+the rules propose exactly those four merges and nothing else.
+
+\paragraph{Inconsistencies from approximate dependencies.} A near-miss from
+\cref{sec:design-discovery} becomes an \emph{inconsistency}: for each left-hand value whose rows
+disagree, the screen lists the variants with their row counts and suggests the majority value. In the
+sample, Mr.~Gupta's old phone number appears in five rows, so
+\code{teacher} $\to$ \code{teacher\_phone} is broken in exactly those five rows; the suggested
+fix rewrites them to the number used in all his other rows. The name variants, in turn, show up as the
+near-miss \code{student\_phone} $\to$ \code{student\_name} with exactly eight violating rows, until
+the duplicate merge removes them. The rewrite is a single
+\code{WITH old AS (SELECT ... FOR UPDATE), upd AS (UPDATE ... RETURNING ...)} statement that updates
+the affected rows and returns the old values, which the service logs as it goes. Accepting all
+suggestions applies every merge and fix in one transaction, after which the columns are re-profiled
+and the analysis is repeated. \Cref{fig:analyze-clean} shows the screen afterwards: the issues list is empty and the
+dependencies are exact.
+
+\screenshot{analyze-clean-dark}{Analyze after accepting all suggestions}{fig:analyze-clean}
+
+% -----------------------------------------------------------------------------------------------------
+\subsection{Third Normal Form Synthesis}
+\label{sec:design-3nf}
+
+Once the accepted exact dependencies are known, the design stage computes a decomposition into third
+normal form. This part is pure set algebra over attribute names, so it is implemented as a small
+Python module and tested separately from the database. It follows Bernstein's synthesis algorithm
+\cite{bernstein1976}, summarised in \cref{alg:bernstein}.
+
+\InputIfFileExists{figures/bernstein}{}{}
+
+\paragraph{Closure.} The closure $X^{+}$ of an attribute set under a dependency set $F$ is computed
+by repeatedly adding the right-hand side of any dependency whose left-hand side is already
+contained. Closure answers every question the algorithm needs: $X \to A$ is implied by $F$ exactly
+when $A \in X^{+}$ \cite{silberschatz2019}; $X$ is a superkey when $X^{+}$ is the whole attribute set.
+
+\paragraph{Minimal cover.} The set $F$ is reduced to a canonical cover: right-hand sides are split
+to single attributes; extraneous left-hand attributes are removed (an attribute $B$ in $XB \to A$ is
+extraneous if $A \in X^{+}$ already); and redundant dependencies are removed (a dependency is
+redundant if its right-hand side is in the closure of its left-hand side under the \emph{other}
+dependencies). All tie-breaks follow the spreadsheet's column order, so the result is deterministic.
+
+\paragraph{Synthesis.} Cover dependencies with the same left-hand side are grouped, one relation per
+group containing the left-hand side and all of its right-hand sides. Groups whose determinants are
+equivalent ($X \leftrightarrow Y$) are merged, and after merging, dependencies that have become
+redundant because of the equivalence are pruned, last to first; without this step a merged relation
+can keep a non-prime attribute that is determined by a non-key and so violates third normal form.
+Each resulting relation has its determinant as primary key and the equivalent determinants as further
+unique keys.
+
+\paragraph{Lossless-join guarantee.} A dependency-preserving synthesis is not necessarily lossless
+unless one relation contains a key of the whole table. After grouping, the algorithm therefore checks
+whether any relation $R_i$ satisfies $R_i^{+} \supseteq U$, where $U$ is the full attribute set, and
+if none does, it adds a relation consisting of a key of $U$ under the accepted dependencies (found by
+dropping attributes in reverse column order while the remainder still determines everything). In QLens
+the attributes that no dependency determines form the \emph{fact table}; the fact relation is the
+synthesized one that contains all of them and whose closure covers $U$, or else this added key relation. The argument for losslessness is the standard
+one: starting from the fact relation, each other relation is joined on its determinant, which is a
+key of that relation, so each join adds attributes functionally determined by attributes already
+present and can neither add nor remove rows. The property is not only argued but also tested:
+property-based tests generate thousands of random dependency sets and assert that the output
+relations are in third normal form, preserve every dependency and contain a key of $U$.
+
+\InputIfFileExists{figures/fee-example}{}{}
+
+\paragraph{Worked example.} On the cleaned coaching-fee register, discovery reports the exact
+dependencies \fd{student\_name}{student\_phone} (and the reverse, since phone numbers are unique per
+student), \fd{student\_name}{batch}, \fd{batch}{teacher}, \fd{teacher}{teacher\_phone}, and the
+key (\code{student\_name}, \code{month}) (the near-misses having been removed by the clean-up of
+\cref{sec:design-cleanup}). The minimal cover removes \fd{student\_name}{teacher}
+because it follows from the other two. Synthesis yields one relation per determinant, and
+\cref{fig:fee-example} shows the resulting design: \tbl{students}(\code{id}, \code{student\_name}
+\UQ, \code{student\_phone} \UQ, \code{batch\_id} \FK), \tbl{batches}(\code{id}, \code{batch} \UQ,
+\code{teacher\_id} \FK), \tbl{teachers}(\code{id}, \code{teacher} \UQ, \code{teacher\_phone}
+\UQ) and the fact table \tbl{fee\_register}(\code{id}, \code{student\_id} \FK, \code{month},
+\code{fee\_paid}, \code{payment\_mode}, \code{UNIQUE(student\_id, month)}). The proposal step then
+replaces each determinant by a surrogate key, substitutes foreign keys for the dependent columns,
+names the tables, and emits the \code{CREATE TABLE} script for review. The phone number of a
+teacher is stored once instead of in every row of every student the teacher teaches, so the update
+anomaly described in Chapter~\ref{ch:introduction} disappears.
+
+% -----------------------------------------------------------------------------------------------------
+\subsection{Applying a Design and Verifying It is Lossless}
+\label{sec:design-apply}
+\stwip
+
+Applying a design creates the normalized tables in \wsn{} and fills them from \code{\_staging}.
+This is the step with the highest cost of a mistake, so it is designed around a single rule: the user
+sees the result of a verification, never an assumption. The design is as follows; the implementation
+is in progress.
+
+\begin{enumerate}
+  \item The whole operation runs in \emph{one transaction}: create the tables, insert dimension rows
+  with \code{INSERT ... SELECT DISTINCT}, insert the fact rows by joining staging to the dimensions on
+  their natural keys, and run the check. If anything fails, \code{ROLLBACK} leaves the workspace as it
+  was and no half-built schema remains.
+  \item The check rebuilds the original table by joining the new tables back together and compares it
+  with \code{\_staging} \emph{as a multiset}, in both directions, using \code{EXCEPT ALL}
+  (\cref{lst:lossless}). \code{EXCEPT} without \code{ALL} would treat the data as a set and hide
+  a lost duplicate row; \code{EXCEPT ALL} cancels rows one for one, so a count difference of even one
+  row is a mismatch.
+  \item The three counts (staging rows, reconstructed rows, mismatching rows) are written to
+  \tbl{schema\_proposals}, and only if \code{mismatch\_rows = 0} is the status set to \emph{applied}.
+  The \code{CHECK} constraint of \cref{sec:design-metadata} makes it impossible to record an applied
+  proposal without a passing check, even through a bug in application code.
+\end{enumerate}
+
+\begin{lstlisting}[language=SQL,caption={Design of the lossless check (illustrative; the join is generated from the proposal)},label={lst:lossless}]
+WITH rebuilt AS (
+    SELECT s.student_name, s.student_phone, b.batch, t.teacher,
+           t.teacher_phone, f.month, f.fee_paid, f.payment_mode
+    FROM   ws_7.fee_register f
+    JOIN   ws_7.students s ON s.id = f.student_id
+    JOIN   ws_7.batches  b ON b.id = s.batch_id
+    JOIN   ws_7.teachers t ON t.id = b.teacher_id
+), only_staging AS (
+    SELECT * FROM ws_7_src._staging_cols EXCEPT ALL SELECT * FROM rebuilt
+), only_rebuilt AS (
+    SELECT * FROM rebuilt EXCEPT ALL SELECT * FROM ws_7_src._staging_cols
+)
+SELECT (SELECT count(*) FROM only_staging) + (SELECT count(*) FROM only_rebuilt) AS mismatch_rows;
+\end{lstlisting}
+
+Here \code{\_staging\_cols} stands for the staging table restricted to the data columns (the
+surrogate \code{\_row\_id} is excluded, since it has no counterpart in the design). After a
+successful apply the main schema is granted to the workspace role and the dataset status becomes
+\code{applied}; a later redesign creates a new draft while the applied design remains in force.
+
+% -----------------------------------------------------------------------------------------------------
+\subsection{Security and Isolation}
+\label{sec:design-security}
+
+\InputIfFileExists{figures/sequence-query}{}{}
+
+QLens accepts arbitrary SQL from the user, so its security model is built on privileges that the
+database itself enforces, in layers.
+
+\paragraph{Per-workspace roles.} Creating a workspace runs, inside the request transaction, a
+\code{CREATE ROLE} for a \code{LOGIN} role dedicated to that workspace, with \code{NOINHERIT},
+\code{CONNECTION LIMIT 3}, and the following settings stored on the role:
+\code{statement\_timeout = '5s'}, \code{default\_transaction\_read\_only = on},
+\code{idle\_in\_transaction\_session\_timeout = '10s'} and a \code{search\_path} of the workspace's own
+schemas. Because the settings belong to the role, they apply to every session regardless of what the
+application code remembers to do. The role is then granted \code{USAGE} on the workspace's schemas and
+\code{SELECT} on their tables, with \code{ALTER DEFAULT PRIVILEGES} so tables created later are covered.
+It holds no privileges on any other workspace's schemas and none on the \code{qlens} schema, so a
+query such as \code{SELECT * FROM qlens.users} fails with a permission error. Creation is atomic with
+the workspace row, and deletion drops the schemas, owned objects and role together.
+
+\paragraph{Query path.} \Cref{fig:seq-query} shows what happens when a user runs a query. The session
+cookie is resolved to a user, the workspace is checked to belong to that user, the query runs on a
+sandbox connection as the workspace role, and the outcome (status, duration, row count or error) is
+written to \tbl{query\_runs} by the application connection. The role's read-only setting means that
+even a statement such as \code{DROP TABLE} or \code{UPDATE} fails inside the database; no
+keyword filtering is involved, which avoids the usual bypasses of text filters. Identifiers that come
+from user data or from the proposal are always passed through \code{psycopg}'s identifier quoting
+and values are always bound parameters.
+
+\paragraph{Passwords and sessions.} Passwords are hashed with Argon2 (via \code{argon2-cffi}), a
+memory-hard algorithm designed to make offline guessing expensive. A login creates a random token,
+sends it to the browser in an \code{httpOnly} cookie and stores only its SHA-256 digest as the primary
+key of \tbl{sessions}; a \code{CHECK} enforces the 32-byte digest length. A copy of the database
+therefore cannot be replayed as live sessions, and logging out or deleting a user removes the sessions
+by cascade. Emails are stored in lower case behind a \code{CHECK (email = lower(email))}, which makes
+the \code{UNIQUE} constraint effectively case-insensitive.
+
+% -----------------------------------------------------------------------------------------------------
+\subsection{Triggers and Views}
+\label{sec:design-triggers}
+
+Two kinds of database-side logic keep derived data correct regardless of which code path writes it.
+
+\paragraph{Triggers.} The function \code{touch\_updated\_at} stamps \code{updated\_at} on every
+\code{UPDATE} of workspaces, datasets and saved queries, ignoring whatever value the client sent. It
+uses \code{clock\_timestamp()} rather than \code{now()}, because \code{now()} is frozen at the start of
+the transaction and two updates inside one transaction would look simultaneous.
+
+The function \code{record\_query\_run} (\cref{lst:trigger}) maintains the usage counters of a saved
+query. It is an \code{AFTER INSERT} row trigger on \tbl{query\_runs} whose \code{WHEN} clause filters
+before the function is called: only successful runs that belong to a saved query count. Failed and
+timed-out runs are kept as history but do not increment \code{run\_count}. The counters therefore
+cannot drift from the history table, and the application never has to remember to update them.
+
+\begin{lstlisting}[language=SQL,caption={The usage-counter trigger (from \code{002\_logic.sql})},label={lst:trigger}]
+CREATE FUNCTION qlens.record_query_run() RETURNS trigger
+LANGUAGE plpgsql AS $$
+BEGIN
+    UPDATE qlens.saved_queries
+       SET run_count        = run_count + 1,
+           last_run_at      = NEW.created_at,
+           last_duration_ms = NEW.duration_ms
+     WHERE id = NEW.saved_query_id;
+    RETURN NULL;   -- AFTER trigger: return value is ignored
+END;
+$$;
+
+CREATE TRIGGER query_runs_record AFTER INSERT ON qlens.query_runs
+    FOR EACH ROW WHEN (NEW.saved_query_id IS NOT NULL AND NEW.status = 'ok')
+    EXECUTE FUNCTION qlens.record_query_run();
+\end{lstlisting}
+
+\paragraph{Views.} Three views are read directly by the API. \code{v\_workspace\_summary} produces
+one row per workspace for the dashboard: its stage (\code{empty} until a dataset exists, then the
+dataset status), the size of the dataset, the number of tables in the applied design and the latest
+activity. It uses two \code{LEFT JOIN LATERAL} aggregates; an aggregate without \code{GROUP BY}
+always returns exactly one row, so a workspace with no dataset or no queries is never dropped.
+\code{v\_slow\_queries} selects the successful runs of the last 30 days whose duration is at or above
+the workspace's 90th percentile, computed with \code{percentile\_cont(0.9) WITHIN GROUP}.
+
+\code{v\_saved\_query\_trend} (\cref{lst:trend}) uses window functions to give each saved query a
+timing history: the run number, the previous duration and a moving average over the current and four
+preceding runs. The row id is a tie-breaker in the window ordering, so runs with identical timestamps
+still get a stable order. The performance lab uses this view to show whether a query got faster after an
+index experiment.
+
+\begin{lstlisting}[language=SQL,caption={Timing trend of saved queries with window functions (from \code{002\_logic.sql})},label={lst:trend}]
+CREATE VIEW qlens.v_saved_query_trend AS
+SELECT saved_query_id,
+       id AS run_id,
+       row_number() OVER (PARTITION BY saved_query_id ORDER BY created_at, id) AS run_number,
+       created_at,
+       duration_ms,
+       lag(duration_ms) OVER (PARTITION BY saved_query_id ORDER BY created_at, id) AS prev_ms,
+       avg(duration_ms) OVER (PARTITION BY saved_query_id ORDER BY created_at, id
+                              ROWS BETWEEN 4 PRECEDING AND CURRENT ROW) AS moving_avg_ms
+FROM qlens.query_runs
+WHERE saved_query_id IS NOT NULL
+  AND status = 'ok'
+  AND duration_ms IS NOT NULL;
+\end{lstlisting}
+
+\paragraph{Summary of implementation status.} \Cref{tab:design-status} relates the design
+components above to what exists at the time of writing.
+
+\begin{table}[htbp]
+  \caption{Status of the designed components}
+  \label{tab:design-status}
+  \small
+  \begin{tabularx}{\linewidth}{@{}l X l@{}}
+    \toprule
+    Component & Notes & Status \\
+    \midrule
+    Metadata schema, triggers, views & 21 tables, generated columns, partial unique indexes & \stdone \\
+    Import and type inference & CSV and XLSX, \code{try\_date}, column profile & \stdone \\
+    Dependency and key discovery & \code{check\_fd}, \code{is\_unique}, noise suppression & \stdone \\
+    Duplicate detection and fixes & \code{pg\_trgm} with GIN, audit log, accept all & \stdone \\
+    FD algebra and 3NF synthesis & Closure, minimal cover, Bernstein, property tests & \stdone \\
+    Proposal and DDL generation & Surrogate keys, FK substitution, naming & \stwip \\
+    Apply and lossless verification & Single transaction, \code{EXCEPT ALL} & \stwip \\
+    Query sandbox and history & Role-based isolation, saved queries & \stwip \\
+    Performance lab & \code{EXPLAIN ANALYZE}, index experiments & \stplan \\
+    Step-through visualizer, assistant & & \stplan \\
+    \bottomrule
+  \end{tabularx}
+\end{table}

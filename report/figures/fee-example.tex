@@ -1,0 +1,62 @@
+% Worked example: the fee register, its dependency diagram and the synthesized 3NF schema.
+\begin{figure}[tbp]
+\centering
+\begin{tikzpicture}[
+    col/.style={draw=rule, fill=paper, font=\ttfamily\scriptsize, minimum height=6mm, inner xsep=2pt},
+    dep/.style={-{Stealth[length=4pt,width=3.4pt]}, line width=0.7pt, draw=#1},
+    tab/.style={draw=#1!80!black, line width=0.6pt, rounded corners=2pt, fill=white, inner sep=0pt},
+  ]
+  % ---- (a) the sheet's columns with dependency arcs above --------------------------------------
+  \node[font=\sffamily\small\bfseries, anchor=west] at (-0.2,2.45) {(a) Dependencies discovered in the 3{,}000-row sheet};
+  \node[col, minimum width=2.05cm] (sn) at (1.0,0) {student\_name};
+  \node[col, minimum width=2.15cm, right=0pt of sn] (sp) {student\_phone};
+  \node[col, minimum width=1.25cm, right=0pt of sp] (b) {batch};
+  \node[col, minimum width=1.5cm, right=0pt of b] (t) {teacher};
+  \node[col, minimum width=2.15cm, right=0pt of t] (tp) {teacher\_phone};
+  \node[col, minimum width=1.2cm, right=0pt of tp] (m) {month};
+  \node[col, minimum width=1.6cm, right=0pt of m] (f) {fee\_paid};
+  \node[col, minimum width=2.1cm, right=0pt of f] (pm) {payment\_mode};
+  % arcs (colour = table that will hold the dependency)
+  \draw[dep=lane0] ([xshift=-3mm]sn.north) to[out=70,in=110] node[above, font=\tiny, text=lane0] {$\leftrightarrow$} ([xshift=-3mm]sp.north);
+  \draw[dep=lane0] ([xshift=3mm]sp.north) to[out=70,in=110] ([xshift=-2mm]b.north);
+  \draw[dep=lane1] ([xshift=2mm]b.north) to[out=70,in=110] ([xshift=-3mm]t.north);
+  \draw[dep=lane2] ([xshift=3mm]t.north) to[out=70,in=110] node[above, font=\tiny, text=lane2] {$\leftrightarrow$} ([xshift=-3mm]tp.north);
+  % composite determinant (student_name, month) -> fee_paid, payment_mode, drawn below
+  \draw[lane3, line width=0.7pt] (sn.south) -- ++(0,-0.45) coordinate (k1) -- (k1 -| m.south) -- (m.south);
+  \draw[dep=lane3] (k1 -| m.south) ++(0,0) -- ++(0.9,0) -| (f.south);
+  \draw[dep=lane3] (k1 -| f.south) -- ++(1.0,0) -| (pm.south);
+  \node[font=\sffamily\tiny, text=lane3, anchor=north west] at ([yshift=-1pt]k1) {key (student\_name, month) determines fee\_paid and payment\_mode};
+  \node[font=\sffamily\scriptsize, align=left, anchor=north west, text width=15cm] at (-0.2,-1.05)
+    {\color{muted}Before cleaning: \fd{student\_phone}{student\_name} fails on 8 rows (variant spellings such as
+     \code{riya sharma}) and \fd{teacher}{teacher\_phone} fails on 5 rows (Mr.\ Gupta's old number).
+     \fd{student\_name}{batch} and \fd{student\_phone}{teacher} are derived and not shown.};
+
+  % ---- (b) the synthesized schema --------------------------------------------------------------
+  \node[font=\sffamily\small\bfseries, anchor=west] at (-0.2,-2.8) {(b) Synthesized 3NF schema (lane colours as in the application)};
+  \newcommand{\ftab}[4]{% name, colour, rows, extra
+    \begin{tabular}{@{}l@{\hspace{6pt}}l@{}}
+      \multicolumn{2}{@{}>{\columncolor{#2}}c@{}}{\rule{0pt}{10pt}\textcolor{white}{\bfseries\sffamily\footnotesize #1}}\\[1pt]
+      #3
+    \end{tabular}}
+  \node[tab=lane3, anchor=north west] (FR) at (0,-2.75) {\ftab{fee\_register}{lane3}{
+    \PK & id\\ \FK & student\_id\\ & month\\ & fee\_paid\\ & payment\_mode\\
+    \multicolumn{2}{@{}l@{}}{\color{lane5}\itshape UQ(student\_id, month)}}{}};
+  \node[tab=lane0, anchor=north west] (ST) at (4.0,-2.75) {\ftab{students}{lane0}{
+    \PK & id\\ \UQ & student\_name\\ \UQ & student\_phone\\ \FK & batch\_id}{}};
+  \node[tab=lane1, anchor=north west] (BA) at (8.0,-2.75) {\ftab{batches}{lane1}{
+    \PK & id\\ \UQ & batch\\ \FK & teacher\_id}{}};
+  \node[tab=lane2, anchor=north west] (TE) at (11.7,-2.75) {\ftab{teachers}{lane2}{
+    \PK & id\\ \UQ & teacher\\ \UQ & teacher\_phone}{}};
+  \draw[rel, {ER many}-{ER one}] ([yshift=-7mm]FR.north east) -- ([yshift=-7mm]ST.north west);
+  \draw[rel, {ER many}-{ER one}] ([yshift=-7mm]ST.north east) -- ([yshift=-7mm]BA.north west);
+  \draw[rel, {ER many}-{ER one}] ([yshift=-7mm]BA.north east) -- ([yshift=-7mm]TE.north west);
+  \foreach \n/\r in {FR/{3{,}000 rows}, ST/{300 rows}, BA/{8 rows}, TE/{6 rows}}
+    \node[font=\sffamily\scriptsize\color{muted}, anchor=north west] at ([yshift=-1mm]\n.south west) {\r};
+\end{tikzpicture}
+\caption{Worked example on the bundled fee register. (a) The columns of the sheet with the dependencies
+QLens finds; arrows point from determinant to dependent, $\leftrightarrow$ marks a pair of mutually
+determining columns. (b) The schema produced by the synthesis after the 13 faulty rows are cleaned: each
+dependency moves to the table of its determinant, so a teacher's phone number is stored once instead of on
+every row. Row counts follow from the sample's construction (300 students, 8 batches, 6 teachers).}
+\label{fig:fee-example}
+\end{figure}

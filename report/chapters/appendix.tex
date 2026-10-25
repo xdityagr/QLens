@@ -1,0 +1,204 @@
+\chapter{Appendix}
+\label{ch:appendix}
+
+\section{Complete DDL of Selected Tables}
+\label{app:ddl}
+
+The statements below are copied from the first migration of the metadata schema (\code{001\_schema.sql}). They cover the tables that carry the workspace, the imported dataset, the discovered dependencies, the design proposals and the query history.
+
+\begin{lstlisting}[language=SQL,caption={Workspaces, datasets and dataset columns.},label={lst:ddl-core}]
+CREATE TABLE qlens.workspaces (
+    id         bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    owner_id   bigint NOT NULL REFERENCES qlens.users (id) ON DELETE CASCADE,
+    name       text NOT NULL CHECK (length(name) BETWEEN 1 AND 60),
+    created_at timestamptz NOT NULL DEFAULT now(),
+    updated_at timestamptz NOT NULL DEFAULT now(),
+    UNIQUE (owner_id, name)
+);
+
+CREATE TABLE qlens.datasets (
+    id                bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    workspace_id      bigint NOT NULL UNIQUE
+                      REFERENCES qlens.workspaces (id) ON DELETE CASCADE,
+    original_filename text NOT NULL,
+    source            text NOT NULL CHECK (source IN ('upload', 'sample')),
+    file_size_bytes   integer NOT NULL CHECK (file_size_bytes >= 0),
+    row_count         integer NOT NULL CHECK (row_count >= 0),
+    column_count      smallint NOT NULL CHECK (column_count BETWEEN 1 AND 60),
+    status            text NOT NULL DEFAULT 'imported'
+                      CHECK (status IN ('imported', 'analyzed', 'applied')),
+    created_at        timestamptz NOT NULL DEFAULT now(),
+    updated_at        timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE TABLE qlens.dataset_columns (
+    id             bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    dataset_id     bigint NOT NULL REFERENCES qlens.datasets (id) ON DELETE CASCADE,
+    ordinal        smallint NOT NULL CHECK (ordinal >= 1),
+    name           text NOT NULL CHECK (name ~ '^[a-z_][a-z0-9_]{0,62}$'),
+    label          text NOT NULL,
+    inferred_type  text NOT NULL
+                   CHECK (inferred_type IN ('integer', 'numeric', 'boolean', 'date', 'text')),
+    null_count     integer NOT NULL DEFAULT 0 CHECK (null_count >= 0),
+    distinct_count integer NOT NULL DEFAULT 0 CHECK (distinct_count >= 0),
+    sample_values  text[] NOT NULL DEFAULT '{}',
+    UNIQUE (dataset_id, name),
+    UNIQUE (dataset_id, ordinal)
+);
+\end{lstlisting}
+
+\begin{lstlisting}[language=SQL,caption={Functional dependencies and their left-hand-side columns.},label={lst:ddl-fd}]
+CREATE TABLE qlens.functional_dependencies (
+    id              bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    dataset_id      bigint NOT NULL REFERENCES qlens.datasets (id) ON DELETE CASCADE,
+    rhs_column_id   bigint NOT NULL
+                    REFERENCES qlens.dataset_columns (id) ON DELETE CASCADE,
+    lhs_size        smallint NOT NULL CHECK (lhs_size BETWEEN 1 AND 2),
+    row_count       integer NOT NULL CHECK (row_count >= 0),
+    lhs_values      integer NOT NULL CHECK (lhs_values >= 0),
+    repeated_groups integer NOT NULL CHECK (repeated_groups >= 0),
+    violating_rows  integer NOT NULL CHECK (violating_rows >= 0),
+    is_exact        boolean GENERATED ALWAYS AS (violating_rows = 0) STORED,
+    violation_ratio numeric GENERATED ALWAYS AS
+                    (violating_rows::numeric / NULLIF(row_count, 0)) STORED,
+    accepted        boolean NOT NULL DEFAULT true,
+    created_at      timestamptz NOT NULL DEFAULT now(),
+    CHECK (violating_rows <= row_count)
+);
+CREATE INDEX functional_dependencies_dataset_idx
+    ON qlens.functional_dependencies (dataset_id);
+CREATE INDEX functional_dependencies_rhs_idx
+    ON qlens.functional_dependencies (rhs_column_id);
+
+CREATE TABLE qlens.fd_lhs_columns (
+    fd_id     bigint NOT NULL
+              REFERENCES qlens.functional_dependencies (id) ON DELETE CASCADE,
+    column_id bigint NOT NULL
+              REFERENCES qlens.dataset_columns (id) ON DELETE CASCADE,
+    PRIMARY KEY (fd_id, column_id)
+);
+CREATE INDEX fd_lhs_columns_column_idx ON qlens.fd_lhs_columns (column_id);
+\end{lstlisting}
+
+\begin{lstlisting}[language=SQL,caption={Schema proposals with the lossless-join result.},label={lst:ddl-proposals}]
+CREATE TABLE qlens.schema_proposals (
+    id                 bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    dataset_id         bigint NOT NULL
+                       REFERENCES qlens.datasets (id) ON DELETE CASCADE,
+    status             text NOT NULL
+                       CHECK (status IN ('draft', 'applied', 'superseded')),
+    created_at         timestamptz NOT NULL DEFAULT now(),
+    applied_at         timestamptz,
+    lossless_ok        boolean,
+    staging_rows       integer CHECK (staging_rows >= 0),
+    reconstructed_rows integer CHECK (reconstructed_rows >= 0),
+    mismatch_rows      integer CHECK (mismatch_rows >= 0),
+    CHECK (status <> 'applied' OR lossless_ok IS TRUE)
+);
+CREATE UNIQUE INDEX schema_proposals_one_draft_idx
+    ON qlens.schema_proposals (dataset_id) WHERE status = 'draft';
+CREATE UNIQUE INDEX schema_proposals_one_applied_idx
+    ON qlens.schema_proposals (dataset_id) WHERE status = 'applied';
+\end{lstlisting}
+
+\begin{lstlisting}[language=SQL,caption={Query history.},label={lst:ddl-runs}]
+CREATE TABLE qlens.query_runs (
+    id             bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    workspace_id   bigint NOT NULL
+                   REFERENCES qlens.workspaces (id) ON DELETE CASCADE,
+    saved_query_id bigint REFERENCES qlens.saved_queries (id) ON DELETE SET NULL,
+    sql_text       text NOT NULL,
+    source         text NOT NULL
+                   CHECK (source IN ('typed', 'english', 'stepthrough', 'perf')),
+    target         text NOT NULL CHECK (target IN ('main', 'lab')),
+    status         text NOT NULL CHECK (status IN ('ok', 'error', 'timeout')),
+    duration_ms    numeric(12, 3) CHECK (duration_ms >= 0),
+    row_count      integer CHECK (row_count >= 0),
+    error_message  text,
+    created_at     timestamptz NOT NULL DEFAULT now(),
+    CHECK ((status = 'ok') = (error_message IS NULL))
+);
+CREATE INDEX query_runs_workspace_time_idx
+    ON qlens.query_runs (workspace_id, created_at DESC);
+CREATE INDEX query_runs_saved_query_time_idx
+    ON qlens.query_runs (saved_query_id, created_at)
+    WHERE saved_query_id IS NOT NULL;
+\end{lstlisting}
+
+\section{Sample Datasets}
+\label{app:samples}
+
+Three deterministic datasets ship with QLens so that every demonstration and every test sees identical numbers. All randomness comes from a single generator seeded with 2026, and the key counts are asserted again when the data is produced.
+
+\subsection{Coaching fee register}
+
+3,000 rows: 300 students for 10 months (April to January), one row per student per month.
+
+\begin{itemize}
+  \item \textbf{Columns:} \code{Student Name}, \code{Student Phone}, \code{Batch}, \code{Teacher}, \code{Teacher Phone}, \code{Month}, \code{Fee Paid}, \code{Payment Mode}.
+  \item \textbf{Intended dependencies:} \fd{student\_phone}{student\_name} and the reverse, \fd{student\_name}{batch}, \fd{batch}{teacher}, \fd{teacher}{teacher\_phone}; the key is (student, month). Eight batches share six teachers.
+  \item \textbf{Planted anomalies:} four students (Riya Sharma, Aman Verma, Neha Singh, Karan Mehta) each appear in two rows under a lower-case spelling and a double-space spelling, giving exactly eight violating rows for the phone-to-name dependency. A genuine, different student named Priya Sharma has her own phone and must not be merged. One teacher, Mr.\ Gupta, has an old phone number in exactly five rows.
+  \item \textbf{Other properties:} fee depends on the batch family (JEE 4000, NEET 3500, Foundation 2500); about 8\% of rows are unpaid with fee 0 and an empty payment mode; about 15\% of paid rows are partial payments. Phones are written as \code{+91 98765 43210} so that they are inferred as text.
+\end{itemize}
+
+\subsection{Kirana store sales}
+
+600 bills with one to six distinct items each.
+
+\begin{itemize}
+  \item \textbf{Columns:} \code{Bill No}, \code{Date} (written dd/mm/yyyy), \code{Customer}, \code{Customer Phone}, \code{Item}, \code{Category}, \code{Unit Price}, \code{Qty}, \code{Amount}.
+  \item \textbf{Shape:} 80 customers, 40 items in 6 categories; \code{Amount} equals unit price times quantity in every row.
+  \item \textbf{Planted anomalies:} \code{Toor Dal 1kg} carries an old price in exactly three rows (with a consistent amount), and the customer \code{Mohan Lal} is written \code{Mohan lal} in exactly three rows.
+\end{itemize}
+
+\subsection{Hostel mess attendance}
+
+2,520 rows: 60 students for 14 days and 3 meals.
+
+\begin{itemize}
+  \item \textbf{Columns:} \code{Room}, \code{Student}, \code{Hostel Block}, \code{Warden}, \code{Date} (yyyy-mm-dd), \code{Meal}, \code{Menu Item}, \code{Attended} (Yes or No).
+  \item \textbf{Intended dependencies:} room determines block, block determines warden, and there is one menu item per (date, meal).
+  \item \textbf{Planted anomaly:} the warden of Block B, \code{Mrs. Rao}, is written \code{Mrs Rao} in exactly two rows.
+\end{itemize}
+
+\section{Screenshots}
+\label{app:screens}
+
+\screenshot{login-dark}{Sign-in screen}{fig:login}
+
+\screenshot{dashboard-light}{Dashboard, light theme}{fig:dashboard-light}
+
+\screenshot{analyze-issues-light}{Analyze, light theme}{fig:analyze-light}
+
+\section{Test Inventory}
+\label{app:tests}
+
+The backend tests live in \code{backend/tests} and run against a real PostgreSQL instance, not a mock. \Cref{tab:tests} lists the number of test functions per file. Some functions are parametrised, so the number of cases collected by the runner (212 in the latest full run) is higher than the 172 functions counted here.
+
+\begin{table}[htbp]
+\centering
+\caption{Backend test files and the number of test functions in each.}
+\label{tab:tests}
+\begin{tabularx}{\textwidth}{@{}lrX@{}}
+\toprule
+\textbf{File} & \textbf{Tests} & \textbf{Covers} \\
+\midrule
+\code{test\_cleanup.py}        & 35 & near-duplicate groups, fixes, audit log, accept-all \\
+\code{test\_proposal.py}       & 21 & 3NF proposal, foreign-key substitution, generated DDL \\
+\code{test\_fd\_algebra.py}    & 19 & closure, minimal cover, Bernstein synthesis, property tests \\
+\code{test\_discover.py}       & 18 & dependency and candidate-key discovery in SQL \\
+\code{test\_schema.py}         & 15 & constraints, generated columns, triggers, views \\
+\code{test\_workspaces.py}     & 11 & workspace roles and schemas \\
+\code{test\_stage.py}          & 10 & staging tables and type inference \\
+\code{test\_parse.py}          &  9 & CSV and XLSX parsing \\
+\code{test\_auth.py}           &  8 & password hashing, sessions, cookies \\
+\code{test\_ingest\_routes.py} &  8 & upload and import endpoints \\
+\code{test\_naming.py}         &  7 & identifier and table naming \\
+\code{test\_samples.py}        &  6 & sample dataset guarantees \\
+\code{test\_migrate.py}        &  3 & migration runner \\
+\code{test\_conn\_commit.py}   &  2 & connection and commit behaviour \\
+\midrule
+\textbf{Total}                 & \textbf{172} & \\
+\bottomrule
+\end{tabularx}
+\end{table}

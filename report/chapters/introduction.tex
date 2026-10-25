@@ -1,0 +1,307 @@
+\chapter{Introduction}
+\label{ch:introduction}
+
+This report describes QLens, a locally hosted web application that takes an
+untidy spreadsheet and turns it into a verified relational database in third
+normal form (3NF). The application reads the data itself, works out which
+columns determine which others, proposes a decomposition, and creates the
+tables, keys and foreign keys in PostgreSQL. It also provides a place to query
+the result and to study how those queries execute. This chapter explains the
+problem that motivated the work, states the objectives, fixes the boundaries
+of what was attempted, and walks through four concrete scenarios in which the
+system is used.
+
+%==============================================================
+\section{Motivation and Problem Statement}
+\label{sec:motivation}
+
+\subsection{The fee register}
+
+Consider a coaching institute with roughly three thousand fee payments
+recorded over a year. The office keeps them in a single spreadsheet. Each row
+holds the student's name and phone number, the batch the student attends, the
+teacher of that batch together with the teacher's phone number, the month, the
+amount paid and the mode of payment. The sheet is convenient because every fact
+about a payment is visible on one line, and nobody had to design anything to
+start using it.
+
+The trouble appears after a few months. The same sheet now stores each
+teacher's phone number once for every payment of every student in that
+teacher's batches. When a teacher changes number, the clerk must find and edit
+hundreds of rows, and any row that is missed leaves the sheet contradicting
+itself. A student whose name was typed as \emph{Riya Sharma} in one month and
+\emph{riya  sharma} in another is counted as two people, so the totals for
+that student are split. Finally, a question as ordinary as ``who has not paid
+for October?'' cannot be answered by any single filter, because the answer is
+the set of students who are \emph{absent} from the October rows. In practice
+the clerk works it out by hand, which takes an hour and is easy to get wrong.
+
+None of these problems is a software defect in the spreadsheet program. They
+are structural consequences of storing several different kinds of facts in one
+table, and relational database theory has had precise names for them for
+fifty years.
+
+\subsection{The anomalies in the language of normalization}
+
+Codd introduced the relational model and the idea of removing redundancy by
+decomposing relations into normal forms~\cite{codd1970}. The standard
+treatments~\cite{silberschatz2019,dbbook} classify the damage done by
+redundancy into three anomalies, all of which the fee register exhibits.
+
+\begin{itemize}
+  \item \textbf{Update anomaly.} A single fact is stored in many rows, so a
+    change must be applied to all of them. Teacher phone numbers repeat in
+    every payment row of every student of that teacher.
+  \item \textbf{Insertion anomaly.} A fact cannot be recorded until an
+    unrelated fact exists. A new teacher with no enrolled student, or a new
+    batch with no payment yet, has nowhere to live in the sheet.
+  \item \textbf{Deletion anomaly.} Removing one fact destroys another. Deleting
+    the only payment row of the last student in a batch also deletes the
+    record that the batch exists and who teaches it.
+\end{itemize}
+
+These anomalies are explained by \emph{functional dependencies} (FDs). In the
+register, a student determines a phone number, a student determines a batch, a
+batch determines a teacher, and a teacher determines a phone number. Writing
+this with the notation used throughout the report, the four dependencies are
+\fd{student\_name}{student\_phone}, \fd{student\_name}{batch},
+\fd{batch}{teacher} and \fd{teacher}{teacher\_phone}. The key of the sheet as a
+whole is the pair (student, month), since a student pays once per month. Both
+\code{teacher} and \code{teacher\_phone} therefore depend on only \emph{part}
+of that key, and \code{teacher\_phone} depends on it only \emph{transitively},
+through the batch and the teacher. A relation in which a non-key attribute
+depends on part of a key violates second normal form, and one with a
+transitive dependency violates third normal form. Decomposing the relation so
+that every determinant is a key of its own table removes the anomalies.
+
+Textbook exercises hand the student the FDs and ask for the decomposition. A
+real spreadsheet comes with no such list. The dependencies have to be
+discovered from the data, and the data is dirty. In the sample register that
+accompanies this project, eight rows carry a spelling variant of a student's
+name, and one teacher's old phone number survives in five rows after the
+number was changed. A strict test would reject
+\fd{student\_name}{student\_phone} because of those rows, even though the
+intended dependency clearly holds. A usable tool must therefore distinguish
+a dependency that is absent from one that is \emph{almost} present, and report
+the offending rows to the user as inconsistencies to be repaired.
+
+\subsection{Why existing tools do not close the gap}
+
+Spreadsheet-like database products such as Airtable, NocoDB and Baserow give
+a database look and feel but leave the schema design entirely to the user, who
+is exactly the person that does not know what a functional dependency is.
+General-purpose chat tools can answer questions about an uploaded file, but
+they leave no lasting, constrained, correct database behind, and their answers
+are not backed by keys or foreign keys. Academic normalization calculators
+accept FDs typed by hand and never touch data. No widely available tool takes
+a raw sheet and returns a normalized schema with the data already moved and
+checked. QLens is an attempt to supply that missing step, with the database
+engine itself doing as much of the analysis as possible.
+
+%==============================================================
+\section{Objectives}
+\label{sec:objectives}
+
+The overall aim is to build a working system that converts a flat spreadsheet
+into a verified 3NF PostgreSQL database and makes the result queryable and
+explainable. The aim is broken into the following objectives.
+
+\begin{enumerate}
+  \item Import a CSV or XLSX file into a staging table and infer an SQL type,
+    a null count and a distinct count for every column.
+  \item Discover functional dependencies and candidate keys from the data
+    \emph{inside the database}, using grouped aggregation in SQL, and
+    tolerate a small proportion of violating rows so that dependencies broken
+    only by data-entry errors are still found.
+  \item Detect near-duplicate text values using trigram similarity in
+    PostgreSQL, and let the user apply fixes with a recorded audit trail.
+  \item Compute a 3NF decomposition with a lossless-join guarantee, by
+    synthesis from a minimal cover~\cite{bernstein1976}, and present it with
+    plain-language reasons and generated DDL.
+  \item Apply the accepted design in a single transaction, creating tables,
+    primary keys, foreign keys and uniqueness constraints, migrating the data,
+    and verifying that joining the new tables reproduces the original rows.
+  \item Provide a sandboxed, read-only query workspace with saved queries and a
+    complete run history.
+  \item Provide a performance laboratory that exposes the real
+    \code{EXPLAIN ANALYZE} plan and index suggestions, and a visualizer that
+    steps through a \code{SELECT} stage by stage.
+  \item Keep user data separate: every account owns workspaces, and every
+    workspace is confined to its own schemas under its own database role.
+\end{enumerate}
+
+A second, equally important objective concerns the report itself. The design
+deliberately relies on database features rather than application code
+wherever possible: \code{CHECK}, \code{UNIQUE} and foreign key constraints,
+generated columns, partial unique indexes, triggers, views with window
+functions, PL/pgSQL functions, GIN indexes, and role-based privileges. The
+metadata schema of the application is itself a normalized design, and the
+later design chapters analyse it.
+
+%==============================================================
+\section{Scope of the Work}
+\label{sec:scope}
+
+The system is intended for a single machine and a single analyst working with
+a table of up to roughly one hundred thousand rows. The following lists record
+precisely what is included and what is not.
+
+\subsection{In scope}
+
+\begin{itemize}
+  \item Import of a single-sheet CSV or XLSX file, including day-first dates,
+    through an SQL type-inference step.
+  \item Discovery of exact and approximate functional dependencies, and of
+    single and composite candidate keys, performed by SQL and PL/pgSQL
+    functions on the staged data.
+  \item Near-duplicate detection with \code{pg\_trgm} and a GIN index, and
+    value-level inconsistency fixes recorded in an audit log.
+  \item Functional-dependency algebra (attribute closure, minimal cover) and
+    Bernstein 3NF synthesis, with generated names and DDL.
+  \item A relational metadata schema of 21 tables with constraints, generated
+    columns, triggers and reporting views.
+  \item Local accounts with salted password hashing and server-side sessions,
+    and a PostgreSQL role and pair of schemas for each workspace.
+  \item Bundled sample datasets with planted defects: a coaching-institute fee
+    register of 3,000 rows, a kirana shop sales register and a hostel mess
+    register.
+  \item A web interface in a consistent dark and light design system.
+  \item Application of a design in one transaction followed by a lossless-join
+    check, and an interactive entity--relationship canvas.
+  \item A read-only SQL editor, saved queries and run history; a performance
+    laboratory; a step-through visualizer; and a natural-language assistant.
+\end{itemize}
+
+\subsection{Out of scope}
+
+\begin{itemize}
+  \item Database engines other than PostgreSQL.
+  \item Multi-sheet workbooks, and files beyond about 20~MB or 100,000 rows.
+  \item Write statements from the query editor. The editor is read-only;
+    only the application's own flows (apply a design, merge duplicates,
+    create an index, scale up data) change user tables.
+  \item Step-through of statements that are not a plain \code{SELECT}, or of
+    queries dominated by common table expressions or window functions.
+  \item Live multi-user collaboration, mobile applications and payments.
+  \item Hardening for public hosting on the open internet. The sandbox is
+    designed to be sound for a local demonstration, and exposing it publicly
+    would be a separate piece of work.
+  \item Normal forms beyond 3NF, such as BCNF and 4NF, and the discovery of
+    multivalued dependencies.
+\end{itemize}
+
+\subsection{Status of the deliverable}
+
+The report describes the system as it stood at the time of writing, and the
+status of each capability is marked in the same way throughout. \stdone{} means
+implemented and covered by automated tests (212 backend tests and the
+frontend test suite pass), \stwip{} means partly implemented, and \stplan{}
+means designed but not yet built. The core analytic pipeline from import
+through 3NF proposal is built and tested. Applying a design transactionally
+with the lossless check, the design canvas and the query sandbox interface are
+in progress, and the performance laboratory, the visualizer and the
+language-model assistant are planned. No feature is described in this report
+as working unless it is marked \stdone.
+
+%==============================================================
+\section{Product Scenarios}
+\label{sec:scenarios}
+
+Four short scenarios show how the system is expected to be used, who uses it,
+and how much of each scenario QLens supports today. A summary of the product
+as the user first meets it is shown in \cref{fig:dashboard}.
+
+\screenshot{dashboard-dark}{QLens workspace dashboard (dark theme)}{fig:dashboard}
+
+\subsection{Scenario 1: the coaching-institute owner}
+
+Mrs.\ Verma runs a coaching institute and records all fees in one sheet. She
+creates an account, opens the bundled fee register (or uploads her own file),
+and presses \emph{Analyze}. QLens infers column types and finds the
+dependencies of \cref{sec:motivation}: it reports, for example, that a student
+determines a batch, a batch determines a teacher, and a teacher determines a
+phone number. Because eight rows spell a student's name differently and one
+teacher's earlier number remains in five rows, a few of those dependencies hold
+for all rows but a handful; QLens lists the violating rows as inconsistencies
+and proposes fixes. After she accepts them, the system proposes four tables:
+\tbl{students}, \tbl{batches}, \tbl{teachers} and \tbl{fee\_register}, with
+foreign keys between them and a uniqueness constraint on the student and month
+of each payment. A teacher's phone number is now stored once. Creating these
+tables in her workspace and verifying the migration is the apply step, which
+is currently \stwip.
+
+\begin{center}
+\small
+\begin{tabularx}{\linewidth}{lXl}
+\toprule
+Step & What QLens does & Status \\
+\midrule
+Import and type inference & Stages the file, infers SQL types & \stdone \\
+Dependency and key discovery & Runs in SQL, about 0.3~s for 3,000 rows & \stdone \\
+Duplicate detection and fixes & \code{pg\_trgm} similarity, audit log & \stdone \\
+3NF proposal & Bernstein synthesis, names and DDL & \stdone \\
+Apply and lossless check & One transaction, \code{EXCEPT ALL} comparison & \stwip \\
+\bottomrule
+\end{tabularx}
+\end{center}
+
+\subsection{Scenario 2: the kirana shop}
+
+A neighbourhood shop keeps a daily sales sheet with the date, item, item
+category, supplier, supplier phone, quantity and price. The owner wants to
+know which supplier's items sell best, but the same supplier's phone number is
+repeated on hundreds of lines and a few lines carry a typing variant of an item
+name. Using the bundled kirana dataset, QLens discovers that an item
+determines its category and supplier, and that a supplier determines the
+phone, and proposes the corresponding split. Once the data is in separate
+tables, a question such as total quantity sold per supplier becomes a short
+\code{JOIN} with \code{GROUP BY}. The analysis part of this scenario is
+\stdone{}; the read-only query editor in which the owner would run that
+question is \stwip, and asking it in plain English through the assistant is
+\stplan.
+
+\subsection{Scenario 3: the developer migrating legacy CSV}
+
+A developer inherits a decade-old CSV export from a system with no schema
+documentation and must load it into an application database. Rather than
+guess keys by eye, the developer uploads the file and reads off the candidate
+keys and dependencies that actually hold in the data, including composite keys
+of up to three columns. The proposed design arrives with generated \code{CREATE
+TABLE} statements carrying primary keys, foreign keys and \code{UNIQUE}
+constraints, which can be copied into the application's own migrations. The
+percentages of violating rows reported next to each approximate dependency tell
+the developer where the legacy data cannot be trusted. Discovery and DDL
+generation are \stdone{}; the in-database migration and its \code{EXCEPT ALL}
+check are \stwip, so a developer today should treat the generated DDL as a
+reviewed starting point and not as an automatic migration.
+
+\subsection{Scenario 4: the student learning normalization}
+
+A second-year student is asked to normalize a relation to 3NF and cannot tell
+whether the answer is right. Using one of the sample files, the student sees
+the dependencies, the candidate keys and the minimal cover derived from them,
+and can compare the proposal with a hand-worked solution. Because the
+dependencies come from a data set that the student already understands, each
+table in the proposal can be traced back to a determinant, which makes the
+reasoning about partial and transitive dependencies concrete. Later, the
+planned visualizer will show how a \code{SELECT} over the resulting tables
+passes through \code{FROM}, \code{WHERE}, \code{GROUP BY}, \code{HAVING} and
+\code{ORDER BY}, with row counts at each stage, and the planned performance
+laboratory will show the corresponding execution plan. The analysis and the
+3NF proposal are \stdone{}; the visualizer and the laboratory are \stplan.
+
+%==============================================================
+\section{Organisation of the Report}
+\label{sec:organisation}
+
+The remaining chapters follow the order in which the system was specified and
+built. The requirements chapter lists the users, the functional and
+non-functional requirements and the use cases. The chapter on software
+engineering methodology describes how the work was planned and tested. The
+system design chapters then present the goals, the architecture, the
+relational schema with its entity--relationship diagrams, and the detailed
+design of the analysis algorithms, the sandbox, and the user interface, with
+screenshots of the features that exist. The report closes with a conclusion
+that restates the results honestly against the objectives above, followed by
+references and an appendix containing selected SQL listings and test
+information.

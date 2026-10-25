@@ -1,0 +1,276 @@
+% ------------------------------------------------------------------------------------------------
+% QLens project report: packages, typography, colours, environments and helper macros.
+% ------------------------------------------------------------------------------------------------
+
+% ---- fonts and page ------------------------------------------------------------------------------
+\usepackage[T1]{fontenc}
+\usepackage[utf8]{inputenc}
+\usepackage{amsmath}
+\usepackage{newtxtext}
+\usepackage{newtxmath}
+\usepackage[scaled=0.86]{helvet}            % sans for headings and figures
+\usepackage[varqu,varl,scaled=0.92]{zi4}    % Inconsolata for SQL and identifiers
+\usepackage[a4paper,left=3cm,right=2.5cm,top=2.6cm,bottom=2.6cm,headheight=15pt]{geometry}
+\usepackage{setspace}
+\onehalfspacing
+\usepackage{microtype}
+\usepackage{etoolbox}
+
+% ---- maths, tables, figures ----------------------------------------------------------------------
+\usepackage{graphicx}
+\usepackage[table,dvipsnames]{xcolor}
+\usepackage{booktabs,tabularx,longtable,multirow,array,makecell}
+\usepackage{float}
+\usepackage[font=small,labelfont={bf,sf},format=hang,skip=6pt]{caption}
+\usepackage{subcaption}
+\usepackage{enumitem}
+\setlist{itemsep=2pt,topsep=4pt,parsep=0pt}
+\usepackage{pifont}
+\usepackage{fontawesome5}
+
+\usepackage{tikz}
+\usetikzlibrary{arrows.meta,positioning,shapes.geometric,shapes.multipart,shapes.misc,fit,
+  backgrounds,calc,decorations.pathreplacing,shadows.blur,matrix}
+
+\usepackage[ruled,vlined,linesnumbered,algochapter]{algorithm2e}
+\usepackage{listings}
+
+% ---- colours (the light-theme "lane" palette of the QLens UI) ------------------------------------
+\definecolor{ink}{HTML}{1F2328}
+\definecolor{muted}{HTML}{59636E}
+\definecolor{rule}{HTML}{D0D7DE}
+\definecolor{paper}{HTML}{F6F8FA}
+\definecolor{lane0}{HTML}{1F6FEB}   % blue
+\definecolor{lane1}{HTML}{8250DF}   % purple
+\definecolor{lane2}{HTML}{BF3989}   % pink
+\definecolor{lane3}{HTML}{C2560C}   % orange
+\definecolor{lane4}{HTML}{1A7F37}   % green
+\definecolor{lane5}{HTML}{0F7D7D}   % teal
+\definecolor{lane6}{HTML}{9A6700}   % yellow
+\definecolor{lane7}{HTML}{CF222E}   % red
+\colorlet{accent}{lane0}
+
+% ---- headings ------------------------------------------------------------------------------------
+\usepackage{titlesec}
+\titleformat{\chapter}[display]
+  {\normalfont\sffamily\bfseries\color{ink}}
+  {\large\color{accent}CHAPTER \thechapter}{4pt}{\LARGE}
+  [\vspace{2pt}{\color{rule}\titlerule[0.8pt]}]
+\titlespacing*{\chapter}{0pt}{-12pt}{18pt}
+\titleformat{\section}{\normalfont\sffamily\bfseries\large\color{ink}}{\color{accent}\thesection}{0.8em}{}
+\titleformat{\subsection}{\normalfont\sffamily\bfseries\normalsize\color{ink}}{\color{accent}\thesubsection}{0.8em}{}
+\titleformat{\subsubsection}{\normalfont\sffamily\itshape\normalsize\color{ink}}{\thesubsubsection}{0.8em}{}
+\titlespacing*{\section}{0pt}{14pt}{6pt}
+\titlespacing*{\subsection}{0pt}{12pt}{4pt}
+\titlespacing*{\subsubsection}{0pt}{10pt}{3pt}
+\setcounter{secnumdepth}{3}
+\setcounter{tocdepth}{2}
+
+% ---- running heads -------------------------------------------------------------------------------
+\usepackage{fancyhdr}
+\pagestyle{fancy}
+\fancyhf{}
+\renewcommand{\headrulewidth}{0.4pt}
+\renewcommand{\headrule}{{\color{rule}\hrule width\headwidth height\headrulewidth}}
+\fancyhead[L]{\sffamily\footnotesize\color{muted}QLens: from spreadsheet to verified 3NF database}
+\fancyhead[R]{\sffamily\footnotesize\color{muted}\nouppercase{\leftmark}}
+\fancyfoot[C]{\sffamily\small\thepage}
+\fancypagestyle{plain}{\fancyhf{}\renewcommand{\headrulewidth}{0pt}\fancyfoot[C]{\sffamily\small\thepage}}
+
+% ---- lists of figures / tables / contents --------------------------------------------------------
+\usepackage{tocloft}
+\renewcommand{\cftchapfont}{\sffamily\bfseries}
+\renewcommand{\cftchappagefont}{\sffamily\bfseries}
+\renewcommand{\cftchapleader}{\cftdotfill{\cftdotsep}}
+\setlength{\cftbeforechapskip}{6pt}
+\renewcommand{\cftfigpresnum}{Figure~}
+\renewcommand{\cfttabpresnum}{Table~}
+\setlength{\cftfignumwidth}{5.4em}
+\setlength{\cfttabnumwidth}{5em}
+\setlength{\cftfigindent}{0pt}
+\setlength{\cfttabindent}{0pt}
+
+% ---- SQL listings --------------------------------------------------------------------------------
+\lstdefinelanguage{PGSQL}[]{SQL}{
+  morekeywords={RETURNS,RETURN,LANGUAGE,BEGIN,END,DECLARE,IF,ELSIF,THEN,ELSE,EXCEPTION,WHEN,OTHERS,
+    TRIGGER,EXECUTE,FUNCTION,FOR,EACH,ROW,AFTER,BEFORE,INSERT,UPDATE,SET,STABLE,QUERY,RETURNING,
+    WITH,AS,MATERIALIZED,OVER,PARTITION,ROWS,PRECEDING,CURRENT,FILTER,WITHIN,LATERAL,LEFT,JOIN,ON,
+    GENERATED,ALWAYS,IDENTITY,PRIMARY,KEY,REFERENCES,CASCADE,RESTRICT,CHECK,UNIQUE,NULLS,DISTINCT,
+    NOT,NULL,DEFAULT,CONSTRAINT,FOREIGN,VIEW,SCHEMA,ROLE,LOGIN,PASSWORD,NOINHERIT,CONNECTION,LIMIT,
+    GRANT,USAGE,ALTER,PRIVILEGES,TABLES,ALL,IN,EXCEPT,INTO,USING,INDEX,EXPLAIN,ANALYZE,ROLLBACK,
+    COMMIT,READ,ONLY,TRANSACTION,LOCAL,IS,TRUE,FALSE,COALESCE,CASE,BETWEEN,STORED,TABLE,OR,AND,
+    COPY,STDIN,TEMP,INHERIT,OWNED,DROP,EXISTS,SELECT,FROM,WHERE,GROUP,BY,ORDER,HAVING,CROSS,ANY},
+  sensitive=false,
+  morecomment=[l]{--},
+  morestring=[b]'
+}
+\lstdefinestyle{qsql}{
+  language=PGSQL,
+  basicstyle=\ttfamily\footnotesize\setstretch{1.0},
+  keywordstyle=\color{lane0}\bfseries,
+  commentstyle=\color{muted}\itshape,
+  stringstyle=\color{lane4},
+  numbers=left, numberstyle=\tiny\color{muted}, numbersep=6pt, stepnumber=1,
+  frame=lines, framerule=0.4pt, rulecolor=\color{rule},
+  backgroundcolor=\color{paper},
+  xleftmargin=14pt, framexleftmargin=14pt,
+  breaklines=true, breakatwhitespace=true, columns=fullflexible, keepspaces=true,
+  showstringspaces=false, tabsize=4, upquote=true,
+  aboveskip=8pt, belowskip=6pt,
+  captionpos=t
+}
+\lstdefinestyle{qpy}{
+  style=qsql, language=Python,
+  morekeywords={self,None,True,False},
+  morestring=[b]", morestring=[b]'
+}
+\lstset{style=qsql}
+\renewcommand{\lstlistingname}{Listing}
+\renewcommand{\lstlistlistingname}{List of Listings}
+
+% ---- algorithms ----------------------------------------------------------------------------------
+\SetAlgoCaptionSeparator{.}
+\SetKwInput{KwIn}{Input}
+\SetKwInput{KwOut}{Output}
+\SetAlFnt{\small}
+\SetAlCapFnt{\small\sffamily\bfseries}
+\SetAlCapNameFnt{\small}
+\DontPrintSemicolon
+
+% ---- links and cross references ------------------------------------------------------------------
+\usepackage[hyphens]{url}
+\usepackage[colorlinks=true,linkcolor=lane0,citecolor=lane4,urlcolor=lane1,
+  bookmarksnumbered=true,pdftitle={QLens: from spreadsheet to verified 3NF database},
+  pdfauthor={Aditya Gaur, Aditya Choudhary}]{hyperref}
+\usepackage[nameinlink,capitalise,noabbrev]{cleveref}
+\crefname{lstlisting}{Listing}{Listings}
+\Crefname{lstlisting}{Listing}{Listings}
+\crefname{algocf}{Algorithm}{Algorithms}
+\Crefname{algocf}{Algorithm}{Algorithms}
+
+% ---- small helpers -------------------------------------------------------------------------------
+\newcommand{\code}[1]{\texttt{\small #1}}          % identifiers and short SQL inline
+\newcommand{\tbl}[1]{\texttt{\small\color{ink}#1}}  % table names
+\newcommand{\fd}[2]{\ensuremath{\{\text{\code{#1}}\}\rightarrow\text{\code{#2}}}}
+\newcommand{\FDarrow}{\ensuremath{\rightarrow}}
+\newcommand{\cmark}{\textcolor{lane4}{\ding{51}}}
+\newcommand{\xmark}{\textcolor{lane7}{\ding{55}}}
+% Requirement status markers. Update when the corresponding build task is verified.
+\newcommand{\stdone}{\textcolor{lane4}{\sffamily\footnotesize Built}}
+\newcommand{\stwip}{\textcolor{lane3}{\sffamily\footnotesize In progress}}
+\newcommand{\stplan}{\textcolor{muted}{\sffamily\footnotesize Planned}}
+
+\newcolumntype{L}[1]{>{\raggedright\arraybackslash}p{#1}}
+\newcolumntype{Y}{>{\raggedright\arraybackslash}X}
+\newcolumntype{C}[1]{>{\centering\arraybackslash}p{#1}}
+\renewcommand{\arraystretch}{1.15}
+
+% Tables inside floats use single spacing and a slightly smaller size.
+\AtBeginEnvironment{tabularx}{\setstretch{1.05}}
+\AtBeginEnvironment{tabular}{\setstretch{1.05}}
+\AtBeginEnvironment{longtable}{\setstretch{1.05}\small}
+\AtBeginEnvironment{tikzpicture}{\setstretch{1.0}}
+\AtBeginEnvironment{algorithm}{\setstretch{1.1}}
+
+% ---- screenshots ---------------------------------------------------------------------------------
+% \screenshot{file}{caption}{label}: includes screenshots/<file>.png when it exists; otherwise draws a
+% framed placeholder of the same footprint so the layout (and the list of figures) is final already.
+\newcommand{\screenshot}[3]{%
+  \begin{figure}[htbp]
+    \centering
+    \IfFileExists{screenshots/#1.png}{%
+      \fcolorbox{rule}{white}{\includegraphics[width=0.96\linewidth,height=0.40\textheight,keepaspectratio]{screenshots/#1.png}}%
+    }{%
+      \begin{tikzpicture}
+        \fill[paper,rounded corners=4pt] (0,0) rectangle (0.96\linewidth,0.50\linewidth);
+        \draw[rule,line width=0.8pt,dash pattern=on 4pt off 3pt,rounded corners=4pt]
+          (0,0) rectangle (0.96\linewidth,0.50\linewidth);
+        \fill[rule!60] (0,0.50\linewidth) ++(0,-14pt) rectangle (0.96\linewidth,0.50\linewidth);
+        \foreach \i/\c in {0/lane7,1/lane6,2/lane4} \fill[\c!70] (10pt+\i*9pt,0.50\linewidth-7pt) circle (2.6pt);
+        \node[font=\sffamily\small\color{muted},align=center,text width=0.7\linewidth]
+          at (0.48\linewidth,0.24\linewidth)
+          {\faImage[regular]\par\smallskip Screenshot to be captured from the running application\par
+           \texttt{\footnotesize screenshots/\detokenize{#1}.png}};
+      \end{tikzpicture}%
+    }
+    \caption{#2}\label{#3}
+  \end{figure}}
+
+% ---- crow's-foot arrow tips for ER diagrams ------------------------------------------------------
+% Coordinate system of an arrow tip: the tip is at the origin and points to +x (into the entity).
+\pgfdeclarearrow{
+  name = ER many, % zero or many: open circle, then the crow's foot
+  setup code = {\pgfarrowssettipend{0pt}\pgfarrowssetlineend{-9.6pt}
+    \pgfarrowshullpoint{0pt}{3.6pt}\pgfarrowshullpoint{0pt}{-3.6pt}\pgfarrowshullpoint{-10pt}{0pt}},
+  drawing code = {
+    \pgfsetdash{}{0pt}
+    \pgfpathmoveto{\pgfpoint{-5.6pt}{0pt}}\pgfpathlineto{\pgfpoint{0pt}{3.6pt}}
+    \pgfpathmoveto{\pgfpoint{-5.6pt}{0pt}}\pgfpathlineto{\pgfpoint{0pt}{-3.6pt}}
+    \pgfpathmoveto{\pgfpoint{-6.2pt}{0pt}}\pgfpathlineto{\pgfpoint{0pt}{0pt}}
+    \pgfusepathqstroke
+    \pgfpathcircle{\pgfpoint{-7.9pt}{0pt}}{1.7pt}
+    \pgfusepathqstroke},
+}
+\pgfdeclarearrow{
+  name = ER some, % one or many: bar, then the crow's foot
+  setup code = {\pgfarrowssettipend{0pt}\pgfarrowssetlineend{0pt}
+    \pgfarrowshullpoint{0pt}{3.6pt}\pgfarrowshullpoint{0pt}{-3.6pt}\pgfarrowshullpoint{-8pt}{3.6pt}},
+  drawing code = {
+    \pgfsetdash{}{0pt}
+    \pgfpathmoveto{\pgfpoint{-5.6pt}{0pt}}\pgfpathlineto{\pgfpoint{0pt}{3.6pt}}
+    \pgfpathmoveto{\pgfpoint{-5.6pt}{0pt}}\pgfpathlineto{\pgfpoint{0pt}{-3.6pt}}
+    \pgfpathmoveto{\pgfpoint{-7.6pt}{3.4pt}}\pgfpathlineto{\pgfpoint{-7.6pt}{-3.4pt}}
+    \pgfusepathqstroke},
+}
+\pgfdeclarearrow{
+  name = ER one, % exactly one: two bars
+  setup code = {\pgfarrowssettipend{0pt}\pgfarrowssetlineend{0pt}
+    \pgfarrowshullpoint{0pt}{3.6pt}\pgfarrowshullpoint{-7pt}{-3.6pt}},
+  drawing code = {
+    \pgfsetdash{}{0pt}
+    \pgfpathmoveto{\pgfpoint{-3pt}{3.4pt}}\pgfpathlineto{\pgfpoint{-3pt}{-3.4pt}}
+    \pgfpathmoveto{\pgfpoint{-6pt}{3.4pt}}\pgfpathlineto{\pgfpoint{-6pt}{-3.4pt}}
+    \pgfusepathqstroke},
+}
+\pgfdeclarearrow{
+  name = ER opt, % zero or one: bar, then open circle
+  setup code = {\pgfarrowssettipend{0pt}\pgfarrowssetlineend{-9.4pt}
+    \pgfarrowshullpoint{0pt}{3.6pt}\pgfarrowshullpoint{-10pt}{-3.6pt}},
+  drawing code = {
+    \pgfsetdash{}{0pt}
+    \pgfpathmoveto{\pgfpoint{-3pt}{3.4pt}}\pgfpathlineto{\pgfpoint{-3pt}{-3.4pt}}
+    \pgfpathmoveto{\pgfpoint{-6pt}{0pt}}\pgfpathlineto{\pgfpoint{0pt}{0pt}}
+    \pgfusepathqstroke
+    \pgfpathcircle{\pgfpoint{-7.7pt}{0pt}}{1.7pt}
+    \pgfusepathqstroke},
+}
+
+% ---- TikZ styles shared by the figures -----------------------------------------------------------
+\tikzset{
+  >={Stealth[length=5pt,width=4pt]},
+  every picture/.append style={font=\sffamily\footnotesize},
+  % ER entity: coloured header + attribute table
+  entity/.style={rectangle split, rectangle split parts=2, draw=#1!80!black, line width=0.6pt,
+    rounded corners=1.6pt, rectangle split part fill={#1,white}, inner xsep=3pt, inner ysep=2pt,
+    font=\sffamily\scriptsize, align=left},
+  stub/.style={draw=rule, fill=paper, rounded corners=1.6pt, inner sep=3pt,
+    font=\sffamily\scriptsize\bfseries\color{muted}, dashed},
+  rel/.style={draw=ink!75, line width=0.55pt, rounded corners=3pt},
+  relopt/.style={rel, dash pattern=on 2.4pt off 1.6pt},
+  % generic boxes
+  box/.style={draw=#1!70!black, fill=#1!8, line width=0.6pt, rounded corners=3pt, align=center,
+    inner sep=4pt},
+  box/.default=lane0,
+  lbl/.style={font=\sffamily\scriptsize\color{muted}, align=center},
+}
+
+% ER helpers: header text and attribute rows.
+\newcommand{\eh}[1]{\textcolor{white}{\bfseries\small #1}}
+\newcommand{\PK}{\textcolor{lane3}{\bfseries PK}}
+\newcommand{\FK}{\textcolor{lane1}{\bfseries FK}}
+\newcommand{\PF}{\textcolor{lane3}{\bfseries PK}\,\textcolor{lane1}{\bfseries FK}}
+\newcommand{\UQ}{\textcolor{lane5}{\bfseries UQ}}
+\newcommand{\UF}{\textcolor{lane5}{\bfseries UQ}\,\textcolor{lane1}{\bfseries FK}}
+\newcommand{\GN}{\textcolor{lane4}{\bfseries GEN}}
+\newenvironment{attrs}{\setlength{\tabcolsep}{0pt}\renewcommand{\arraystretch}{0.98}%
+  \begin{tabular}{@{}p{9.2mm}l@{\hspace{5pt}}>{\color{muted}}r@{}}}{\end{tabular}}
