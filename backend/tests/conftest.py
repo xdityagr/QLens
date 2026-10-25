@@ -136,6 +136,16 @@ def fee_ws(conn, make_workspace) -> WsHandle:
 
 
 @pytest.fixture
+def fee_ws_clean(conn, fee_ws) -> WsHandle:
+    """fee_register after the one-click cleanup: duplicates merged, inconsistencies fixed, all FDs accepted."""
+    from qlens.analysis.cleanup import accept_all
+
+    accept_all(conn, fee_ws.dataset_id)
+    conn.commit()
+    return fee_ws
+
+
+@pytest.fixture
 def kirana_ws(conn, make_workspace) -> WsHandle:
     return _with_sample(conn, make_workspace(), "kirana_sales")
 
