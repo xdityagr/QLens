@@ -12,7 +12,7 @@ import { AssistantPanel } from "./AssistantPanel"
 import { BarError } from "./BarError"
 import { CommandBar } from "./CommandBar"
 import { EditToast } from "./EditToast"
-import { designSuggestions, UNDO_MESSAGE } from "./logic"
+import { designSuggestions } from "./logic"
 import type { SqlAction } from "./Thread"
 import { useAssistant } from "./useAssistant"
 
@@ -35,21 +35,32 @@ export function DesignAssistant({
   const floatInput = useRef<HTMLInputElement>(null)
   const dockInput = useRef<HTMLInputElement>(null)
 
-  const onReply = useCallback(
-    (r: AssistantReply) => {
-      if (!r.proposal) return null
+  // A new design version goes straight into the proposal cache; the diagram animates from the old one.
+  const showDesign = useCallback(
+    (next: ProposalOut, flipsChanged: boolean) => {
       const prev = qc.getQueryData<ProposalOut | null>(proposalKey(wsId))
-      const changes = prev ? diffProposals(prev.tables, r.proposal.tables).changes : null
-      qc.setQueryData(proposalKey(wsId), r.proposal)
+      const changes = prev ? diffProposals(prev.tables, next.tables).changes : null
+      qc.setQueryData(proposalKey(wsId), next)
       void qc.invalidateQueries({ queryKey: proposalSqlKey(wsId) })
       // switching a dependency off or on changes what Analyze shows as accepted
-      if (r.actions.some((x) => x.ok && x.tool === "set_dependency_accepted"))
-        void qc.invalidateQueries({ queryKey: analysisKey(wsId) })
+      if (flipsChanged) void qc.invalidateQueries({ queryKey: analysisKey(wsId) })
       return changes
     },
     [qc, wsId],
   )
-  const a = useAssistant({ wsId, context: "design", onReply })
+  const onReply = useCallback(
+    (r: AssistantReply) =>
+      r.proposal
+        ? showDesign(
+            r.proposal,
+            r.actions.some((x) => x.ok && (x.tool === "set_dependency_accepted" || x.tool === "undo_last_edit")),
+          )
+        : null,
+    [showDesign],
+  )
+  // an undo may put dependency flags back, so Analyze is refreshed too
+  const onUndo = useCallback((p: ProposalOut) => showDesign(p, true), [showDesign])
+  const a = useAssistant({ wsId, context: "design", onReply, onUndo })
 
   const examples = useMemo(() => designSuggestions(proposal.tables), [proposal.tables])
   const laneOf = useCallback(
@@ -81,7 +92,6 @@ export function DesignAssistant({
       hotkey={variant === "float" ? !a.open : a.open}
       inputRef={variant === "float" ? floatInput : dockInput}
       label="Ask about the design or say what to change"
-      onEscape={variant === "docked" ? () => a.setOpen(false) : undefined}
     />
   )
 
@@ -92,8 +102,8 @@ export function DesignAssistant({
         {a.toast && (
           <EditToast
             toast={a.toast}
-            undoing={a.pending === UNDO_MESSAGE}
-            onUndo={a.undo}
+            undoing={a.undoing}
+            onUndo={() => void a.undo()}
             onDetails={() => a.setOpen(true)}
             onClose={a.dismissToast}
           />
@@ -121,3 +131,5 @@ export function DesignAssistant({
     </>
   )
 }
+
+export default DesignAssistant

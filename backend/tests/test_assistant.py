@@ -434,6 +434,50 @@ def test_query_context_offers_no_edit_tools(client, conn, draft_ws, use_model):
     assert "Query screen" in model.seen[0][0]
 
 
+def test_data_context_reads_but_offers_no_edit_tools(client, conn, draft_ws, use_model):
+    model = use_model(FakeModel(say("Read-only here.")))
+    body = ask(client, draft_ws.id, "what is in fee_register?", context="data")
+    tools_offered = {t.name for t in model.seen[0][2]}
+    assert "run_sql" in tools_offered and not {"rename_table", "undo_last_edit"} & tools_offered
+    assert "Data screen" in model.seen[0][0]
+    conn.rollback()
+    row = conn.execute("SELECT context FROM qlens.assistant_conversations WHERE id = %s",
+                       (body["conversation_id"],)).fetchone()
+    assert row["context"] == "data"
+    # a data conversation can't be continued from the design screen
+    use_model(FakeModel(say("x")))
+    ask(client, draft_ws.id, "and now?", status=409, conversation_id=body["conversation_id"])
+
+
+def test_undo_endpoint_goes_back_one_version_without_the_model(client, conn, draft_ws, use_model):
+    use_model(FakeModel(call("rename_table", table="students", new_name="learners"), say("Renamed.")))
+    first = ask(client, draft_ws.id, "rename students to learners")
+    assert table_names(first["proposal"])[0] == "learners"
+    use_model(FakeModel())   # an empty script: any model call would fail the test
+    r = client.post(f"/api/workspaces/{draft_ws.id}/assistant/undo")
+    assert r.status_code == 200, r.text
+    assert table_names(r.json()["proposal"]) == ["students", "batches", "teachers", "fee_register"]
+    conn.rollback()
+    assert table_names(live_proposal(conn, draft_ws.dataset_id)) == ["students", "batches", "teachers", "fee_register"]
+    # nothing older than the first built draft
+    again = client.post(f"/api/workspaces/{draft_ws.id}/assistant/undo")
+    assert again.status_code == 409 and again.json()["error"]["code"] == "nothing_to_undo"
+
+
+def test_undo_endpoint_restores_a_dependency_flip(client, conn, draft_ws, use_model):
+    use_model(FakeModel(call("set_dependency_accepted", lhs=["batch"], rhs="teacher", accepted=False), say("Ok.")))
+    ask(client, draft_ws.id, "batch doesn't decide teacher")
+    conn.rollback()
+    assert conn.execute(FD_ACCEPTED).fetchone()["accepted"] is False
+    assert client.post(f"/api/workspaces/{draft_ws.id}/assistant/undo").status_code == 200
+    conn.rollback()
+    assert conn.execute(FD_ACCEPTED).fetchone()["accepted"] is True
+
+
+def test_undo_endpoint_is_scoped_to_the_owner(client, draft_ws, other_applied_ws):
+    assert client.post(f"/api/workspaces/{other_applied_ws.id}/assistant/undo").status_code == 404
+
+
 def test_tool_rounds_are_capped(client, draft_ws, use_model):
     model = use_model(FakeModel(*[call("describe_schema")] * 6, say("Enough looking.")))
     body = ask(client, draft_ws.id, "look around")
@@ -464,25 +508,41 @@ def test_model_failure_is_502_and_keeps_nothing(client, conn, draft_ws, use_mode
     assert conn.execute("SELECT count(*) AS n FROM qlens.assistant_messages").fetchone()["n"] == 0
 
 
-def test_gemini_429_becomes_a_502_without_the_sdk_text(client, conn, draft_ws, use_model):
-    from google.genai import errors
-
+def _gemini_raising(exc):
     from qlens.assistant.llm import GeminiModel
 
     class Models:
         def generate_content(self, **_):
-            raise errors.ClientError(429, {"error": {"code": 429, "message": "quota SECRET-DETAIL",
-                                                     "status": "RESOURCE_EXHAUSTED"}})
+            raise exc
 
     model = GeminiModel("not-a-key", "gemini-test")
     model._client = type("C", (), {"models": Models()})()
-    use_model(model)
+    return model
+
+
+def test_gemini_429_is_a_429_rate_limited_without_the_sdk_text(client, conn, draft_ws, use_model):
+    from google.genai import errors
+
+    use_model(_gemini_raising(errors.ClientError(429, {"error": {"code": 429, "message": "quota SECRET-DETAIL",
+                                                                 "status": "RESOURCE_EXHAUSTED"}})))
+    r = client.post(f"/api/workspaces/{draft_ws.id}/assistant", json={"message": "hi"})
+    assert r.status_code == 429
+    err = r.json()["error"]
+    assert err["code"] == "assistant_rate_limited" and err["detail"] is None and "SECRET" not in r.text
+    assert "try again in a minute" in err["message"].lower()
+    conn.rollback()
+    assert conn.execute("SELECT count(*) AS n FROM qlens.assistant_messages").fetchone()["n"] == 0
+
+
+def test_other_gemini_errors_stay_502_without_the_sdk_text(client, conn, draft_ws, use_model):
+    from google.genai import errors
+
+    use_model(_gemini_raising(errors.ServerError(503, {"error": {"code": 503, "message": "overloaded SECRET-DETAIL",
+                                                                 "status": "UNAVAILABLE"}})))
     r = client.post(f"/api/workspaces/{draft_ws.id}/assistant", json={"message": "hi"})
     assert r.status_code == 502
     err = r.json()["error"]
     assert err["code"] == "assistant_upstream_error" and err["detail"] is None and "SECRET" not in r.text
-    conn.rollback()
-    assert conn.execute("SELECT count(*) AS n FROM qlens.assistant_messages").fetchone()["n"] == 0
 
 
 def test_the_final_round_ignores_function_calls(client, draft_ws, use_model):

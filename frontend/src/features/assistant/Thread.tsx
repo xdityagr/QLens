@@ -1,11 +1,11 @@
 import { BookOpen, Check, CircleAlert, Copy, Database, PencilLine, RotateCw, SearchCheck } from "lucide-react"
-import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from "react"
+import { useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react"
 import { Button, IconButton } from "../../components/Button"
 import { DataGrid } from "../../components/DataGrid"
 import { fmtInt } from "../../lib/format"
 import { useReducedMotion } from "../../lib/reveal"
 import type { SqlRun } from "./api"
-import { typewriterCuts, type Chip, type ChipTone, type Turn } from "./logic"
+import { attachRuns, typewriterCuts, type Chip, type ChipTone, type Turn } from "./logic"
 import { Markdown, type LaneOf } from "./Markdown"
 
 /** What a SQL block offers besides Copy: "Open in Query" on Design, "Insert into editor" on Query. */
@@ -70,6 +70,11 @@ export function AssistantTurn({
   onRetry: (() => void) | null
 }) {
   const text = useTypewriter(turn.text, turn.fresh, () => onSettle(turn.key))
+  // SQL the reply shows and also ran appears once, with its rows (paired on the full text, so the pairing
+  // doesn't shift while the typewriter is half way)
+  const paired = useMemo(() => attachRuns(turn.text, turn.sqlRuns), [turn.text, turn.sqlRuns])
+  // no Open/Insert while the text is still arriving
+  const action = turn.fresh ? null : sqlAction
   if (turn.error)
     return (
       <div
@@ -95,7 +100,9 @@ export function AssistantTurn({
       <Markdown
         text={text}
         laneOf={laneOf}
-        renderSql={(sql, key) => <SqlEvidence key={key} sql={sql} run={null} action={sqlAction} />}
+        renderSql={(sql, key, index) => (
+          <SqlEvidence key={key} sql={sql} run={turn.fresh ? null : (paired.byBlock[index] ?? null)} action={action} />
+        )}
       />
       {/* the evidence arrives once the text has finished */}
       {!turn.fresh && turn.chips.length > 0 && (
@@ -113,9 +120,9 @@ export function AssistantTurn({
         </div>
       )}
       {!turn.fresh &&
-        turn.sqlRuns.map((r, i) => (
+        paired.rest.map((r, i) => (
           <div key={i} className="as-chip" style={{ "--i": turn.chips.length + i } as CSSProperties}>
-            <SqlEvidence sql={r.sql} run={r} action={sqlAction} />
+            <SqlEvidence sql={r.sql} run={r} action={action} />
           </div>
         ))}
       {/* screen readers get the finished reply once, not every word of the typewriter */}

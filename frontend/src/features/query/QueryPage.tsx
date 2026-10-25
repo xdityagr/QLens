@@ -9,7 +9,6 @@ import { ApiError } from "../../lib/api"
 import { useAssistantEnabled } from "../../lib/config"
 import { useAppliedSchema } from "../../lib/schema"
 import { locateError, tablesInSql } from "../../lib/sqlText"
-import { QueryAssistant } from "../assistant/QueryAssistant"
 import { useWorkspaceContext } from "../workspaces/context"
 import { StepHeader } from "../workspaces/StepHeader"
 import type { QueryErrorDetail, QueryableTable, SavedQueryOut } from "./api"
@@ -22,6 +21,8 @@ import type { SqlEditorHandle } from "./SqlEditor"
 
 // CodeMirror is most of this screen's weight; load it with the screen, not with the app.
 const SqlEditor = lazy(() => import("./SqlEditor").then((m) => ({ default: m.SqlEditor })))
+// The assistant loads only when /api/config turns it on.
+const SqlAssistant = lazy(() => import("../assistant/SqlAssistant"))
 
 /** What another screen (History) can hand over: SQL to open, and the saved query it belongs to. */
 export interface OpenInEditor {
@@ -197,15 +198,21 @@ function QueryWorkbench({ wsId }: { wsId: number }) {
 
       {/* The assistant (asks, answers, writes and runs SELECTs); only when /api/config turns it on. */}
       {assistantOn && (
-        <div data-slot="assistant" className="mb-6">
-          <QueryAssistant
-            wsId={wsId}
-            tables={tables}
-            onInsertSql={(text) => {
-              setDraft({ sql: text, savedId: null })
-              editor.current?.focus()
-            }}
-          />
+        <div data-slot="assistant" className="mb-6 min-h-[52px]">
+          <Suspense fallback={null}>
+            <SqlAssistant
+              wsId={wsId}
+              context="query"
+              tables={tables}
+              onInsertSql={(text) => {
+                // it opens as a new unsaved query; ask before it replaces edits that aren't saved
+                if (dirty && sql.trim() && !window.confirm("Replace the unsaved SQL in the editor with this query?"))
+                  return
+                setDraft({ sql: text, savedId: null })
+                editor.current?.focus()
+              }}
+            />
+          </Suspense>
         </div>
       )}
 

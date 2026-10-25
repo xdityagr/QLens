@@ -3,6 +3,7 @@ import { ApiError } from "../../lib/api"
 import type { TableOut } from "../../lib/types"
 import type { AssistantAction, ConversationDetail } from "./api"
 import {
+  attachRuns,
   chipFor,
   designSuggestions,
   editSummary,
@@ -301,5 +302,44 @@ describe("typewriterCuts", () => {
   })
   it("is a single step for empty text", () => {
     expect(typewriterCuts("", 10)).toEqual([0])
+  })
+})
+
+describe("attachRuns", () => {
+  const run = (sql: string, n = 1) => ({ sql, row_count: n, columns: [{ name: "x" }], rows: [[1]] })
+
+  it("puts a run on the fenced block with the same SQL, ignoring whitespace and a final semicolon", () => {
+    const text = "Here it is:\n```sql\nSELECT name\n  FROM students;\n```\nDone."
+    const r = attachRuns(text, [run("SELECT name FROM students", 300)])
+    expect(r.byBlock).toEqual([run("SELECT name FROM students", 300)])
+    expect(r.rest).toEqual([])
+  })
+
+  it("keeps runs that the text doesn't show, and blocks that weren't run", () => {
+    const text = "```sql\nSELECT 1\n```\n\n```sql\nSELECT 2\n```"
+    const r = attachRuns(text, [run("select 3"), run("SELECT  2")])
+    expect(r.byBlock).toEqual([null, run("SELECT  2")])
+    expect(r.rest).toEqual([run("select 3")])
+  })
+
+  it("uses each run once even if the reply repeats the SQL", () => {
+    const text = "```sql\nSELECT 1\n```\n```sql\nSELECT 1\n```"
+    const r = attachRuns(text, [run("SELECT 1")])
+    expect(r.byBlock).toEqual([run("SELECT 1"), null])
+  })
+})
+
+describe("friendlyError, round 2 codes", () => {
+  it("reads the backend's 429 assistant_rate_limited", () => {
+    expect(friendlyError(new ApiError(429, "assistant_rate_limited", "x"))).toMatchObject({
+      kind: "rate",
+      message: "The assistant is rate-limited, try again in a minute.",
+    })
+  })
+  it("says plainly when there is nothing to undo", () => {
+    expect(friendlyError(new ApiError(409, "nothing_to_undo", "There is no earlier version."))).toMatchObject({
+      kind: "other",
+      title: "Nothing to undo",
+    })
   })
 })

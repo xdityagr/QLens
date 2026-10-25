@@ -83,6 +83,11 @@ export function parseInline(s: string): Inline[] {
   return out
 }
 
+/** A code block the screens treat as SQL (gets copy / open / insert, and the run it belongs to). */
+export function isSqlBlock(b: Block): b is Extract<Block, { type: "code" }> {
+  return b.type === "code" && (["sql", "postgresql", "pgsql"].includes(b.lang) || /^\s*(select|with)\b/i.test(b.text))
+}
+
 const FENCE = /^\s*(```+|~~~+)\s*([\w+#.-]*)\s*$/
 const HEADING = /^\s{0,3}(#{1,6})\s+(.*?)\s*#*\s*$/
 const BULLET = /^\s*[-*+]\s+(.*)$/

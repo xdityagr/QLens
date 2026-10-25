@@ -53,7 +53,9 @@ export function CommandBar({
   useEffect(() => {
     if (!hotkey) return
     const onKey = (e: KeyboardEvent) => {
-      if ((e.metaKey || e.ctrlKey) && !e.altKey && e.key.toLowerCase() === "k") {
+      // ⌘K on a Mac, Ctrl+K elsewhere (Ctrl+K on a Mac is the editor's kill-line)
+      const mod = isMac ? e.metaKey && !e.ctrlKey : e.ctrlKey && !e.metaKey
+      if (mod && !e.altKey && e.key.toLowerCase() === "k") {
         e.preventDefault()
         ref.current?.focus()
         ref.current?.select()
@@ -131,8 +133,11 @@ export function CommandBar({
             onBlur={() => setFocused(false)}
             onKeyDown={(e) => {
               if (e.key === "Escape") {
-                if (value) onChange("")
-                else onEscape?.()
+                // the first Esc clears the field and stops there; an empty field lets it through
+                if (value) {
+                  e.preventDefault()
+                  onChange("")
+                } else onEscape?.()
               }
             }}
             aria-label={label}

@@ -5,6 +5,7 @@ import { ApiError } from "../../lib/api"
 import type { DesignChange } from "../../lib/proposalDiff"
 import type { TableOut } from "../../lib/types"
 import type { AssistantAction, AssistantContext, ConversationDetail, Intent, SqlRun } from "./api"
+import { isSqlBlock, parseMarkdown } from "./mdParse"
 
 export type ChipTone = "read" | "check" | "sql" | "edit" | "fail"
 
@@ -41,9 +42,6 @@ export const EDIT_TOOLS = new Set([
   "rebuild_design",
   "undo_last_edit",
 ])
-
-/** What the Undo button sends: the assistant's own undo tool goes back one design version. */
-export const UNDO_MESSAGE = "Undo that last design change."
 
 // ---- chips ------------------------------------------------------------------------------------
 
@@ -176,6 +174,9 @@ export function editSummary(actions: AssistantAction[], changes: DesignChange[] 
 
 export function friendlyError(e: unknown): FriendlyError {
   if (e instanceof ApiError) {
+    if (e.code === "assistant_rate_limited")
+      return { kind: "rate", title: "Rate-limited", message: "The assistant is rate-limited, try again in a minute." }
+    if (e.code === "nothing_to_undo") return { kind: "other", title: "Nothing to undo", message: e.message }
     if (e.code === "assistant_upstream_error") {
       const detail = typeof e.detail === "string" ? e.detail : JSON.stringify(e.detail ?? "")
       if (/\b429\b|RESOURCE_EXHAUSTED|quota|rate.?limit/i.test(detail))
@@ -294,6 +295,32 @@ export function querySuggestions(tables: { name: string; refs: string[] }[]): st
     out.push(`Which ${leaf.refs[0]} appear most often in ${leaf.name}?`)
   }
   return out
+}
+
+// ---- SQL shown and SQL run --------------------------------------------------------------------
+
+/** SQL compared as text: whitespace runs collapsed, no trailing semicolons. */
+export function normalizeSql(sql: string): string {
+  return sql
+    .replace(/\s+/g, " ")
+    .trim()
+    .replace(/[\s;]+$/, "")
+}
+
+/**
+ * A reply often shows the SQL it ran in a fenced block, and the reply also lists the run. Pair them so
+ * the SQL appears once, with its rows: `byBlock[i]` is the run for the i-th SQL block (or null), `rest`
+ * the runs no block shows. Each run is used once.
+ */
+export function attachRuns(text: string, runs: SqlRun[]): { byBlock: (SqlRun | null)[]; rest: SqlRun[] } {
+  const left = [...runs]
+  const byBlock = parseMarkdown(text)
+    .filter(isSqlBlock)
+    .map((b) => {
+      const i = left.findIndex((r) => normalizeSql(r.sql) === normalizeSql(b.text))
+      return i === -1 ? null : left.splice(i, 1)[0]
+    })
+  return { byBlock, rest: left }
 }
 
 // ---- typewriter -------------------------------------------------------------------------------

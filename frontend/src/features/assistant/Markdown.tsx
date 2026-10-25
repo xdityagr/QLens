@@ -1,6 +1,6 @@
 import { useMemo, type ReactNode } from "react"
 import { laneAlpha, laneVar } from "../../lib/lanes"
-import { parseMarkdown, type Block, type Inline } from "./mdParse"
+import { isSqlBlock, parseMarkdown, type Block, type Inline } from "./mdParse"
 
 /** Table name -> its lane, so `students` in a reply wears the students colour. */
 export type LaneOf = (name: string) => number | null
@@ -16,13 +16,19 @@ export function Markdown({
 }: {
   text: string
   laneOf: LaneOf
-  renderSql: (sql: string, key: number) => ReactNode
+  /** `index` counts SQL blocks only, in order (attachRuns pairs runs in the same order) */
+  renderSql: (sql: string, key: number, index: number) => ReactNode
 }) {
   const blocks = useMemo(() => parseMarkdown(text), [text])
-  return <div className="as-prose">{blocks.map((b, i) => renderBlock(b, i, laneOf, renderSql))}</div>
+  let sqlIndex = 0
+  return (
+    <div className="as-prose">
+      {blocks.map((b, i) => (isSqlBlock(b) ? renderSql(b.text, i, sqlIndex++) : renderBlock(b, i, laneOf)))}
+    </div>
+  )
 }
 
-function renderBlock(b: Block, key: number, laneOf: LaneOf, renderSql: (sql: string, key: number) => ReactNode) {
+function renderBlock(b: Block, key: number, laneOf: LaneOf) {
   switch (b.type) {
     case "p":
       return <p key={key}>{inlines(b.inlines, laneOf)}</p>
@@ -44,8 +50,6 @@ function renderBlock(b: Block, key: number, laneOf: LaneOf, renderSql: (sql: str
       )
     }
     case "code":
-      if (b.lang === "sql" || b.lang === "postgresql" || b.lang === "pgsql" || /^\s*(select|with)\b/i.test(b.text))
-        return renderSql(b.text, key)
       return (
         <pre
           key={key}

@@ -10,7 +10,6 @@ import { Tabs } from "../../components/Tabs"
 import { ApiError } from "../../lib/api"
 import { STEPS } from "../../lib/steps"
 import type { ProposalOut } from "../../lib/types"
-import { DesignAssistant } from "../assistant/DesignAssistant"
 import { useWorkspaceContext } from "../workspaces/context"
 import { StepHeader } from "../workspaces/StepHeader"
 import { AppliedResult, ApplyFailure, ApplyProgress, type AppliedSummary } from "./ApplyPanel"
@@ -31,6 +30,8 @@ import { WhyPanel } from "./WhyPanel"
 // React Flow and dagre load with the canvas, not with the rest of the app.
 const loadDiagram = () => import("./ErDiagram")
 const ErDiagram = lazy(loadDiagram)
+// The assistant loads only when /api/config turns it on.
+const DesignAssistant = lazy(() => import("../assistant/DesignAssistant"))
 
 type Tab = "why" | "sql"
 const STEP_INDEX = STEPS.findIndex((s) => s.key === "design")
@@ -281,7 +282,9 @@ function Design({
 
           {assistant && (
             <AssistantSlot>
-              <DesignAssistant wsId={wsId} proposal={p} queryable={queryable} />
+              <Suspense fallback={null}>
+                <DesignAssistant wsId={wsId} proposal={p} queryable={queryable} />
+              </Suspense>
             </AssistantSlot>
           )}
         </section>

@@ -11,21 +11,35 @@ import { querySuggestions } from "./logic"
 import type { SqlAction } from "./Thread"
 import { useAssistant } from "./useAssistant"
 
-/**
- * The assistant on the Query screen: the bar sits under the header; answers open the sidebar, where SQL
- * the assistant wrote can go into the editor. It can read and run SELECTs here, but not edit the design.
- */
-export function QueryAssistant({
-  wsId,
-  tables,
-  onInsertSql,
-}: {
+export interface SqlAssistantProps {
   wsId: number
+  /** the screen it sits on; both read and run SELECTs, neither edits the design */
+  context: "query" | "data"
   /** the applied tables (lane, and which tables their foreign keys point at) */
   tables: { name: string; color_index: number | null; columns: { fk?: { table: string } | null }[] }[]
-  /** put SQL into the editor as a new, unsaved query */
-  onInsertSql: (sql: string) => void
-}) {
+  /** where SQL the assistant wrote can go (e.g. the editor); without it, SQL blocks offer only Copy */
+  onInsertSql?: (sql: string) => void
+  /** the label of that action */
+  insertLabel?: string
+}
+
+const INTRO: Record<SqlAssistantProps["context"], string> = {
+  query:
+    "Ask about the rows in your tables. I can write a SELECT, run it read-only and show what came back; Insert into editor puts the SQL in the editor as a new query.",
+  data: "Ask about the rows in your tables. I can write a SELECT, run it read-only and show what came back.",
+}
+
+/**
+ * The read-only assistant (Query screen, Data screen): the bar sits in the page under its header;
+ * answers open the sidebar, where SQL the assistant wrote can be copied or handed to the page.
+ */
+export function SqlAssistant({
+  wsId,
+  context,
+  tables,
+  onInsertSql,
+  insertLabel = "Insert into editor",
+}: SqlAssistantProps) {
   const qc = useQueryClient()
   const dockInput = useRef<HTMLInputElement>(null)
   const inlineInput = useRef<HTMLInputElement>(null)
@@ -41,7 +55,7 @@ export function QueryAssistant({
     },
     [qc, wsId],
   )
-  const a = useAssistant({ wsId, context: "query", onReply })
+  const a = useAssistant({ wsId, context, onReply })
 
   const examples = useMemo(
     () =>
@@ -51,15 +65,17 @@ export function QueryAssistant({
     [tables],
   )
   const laneOf = useCallback((name: string) => tables.find((t) => t.name === name)?.color_index ?? null, [tables])
-  const sqlAction: SqlAction = {
-    label: "Insert into editor",
-    icon: <TextCursorInput size={13} strokeWidth={1.9} />,
-    run: (sql) => {
-      onInsertSql(sql)
-      // narrow screens: the sidebar covers the editor, so get out of the way
-      if (window.matchMedia("(max-width: 1023px)").matches) a.setOpen(false)
-    },
-  }
+  const sqlAction: SqlAction | null = onInsertSql
+    ? {
+        label: insertLabel,
+        icon: <TextCursorInput size={13} strokeWidth={1.9} />,
+        run: (sql) => {
+          onInsertSql(sql)
+          // narrow screens: the sidebar covers the page, so get out of the way
+          if (window.matchMedia("(max-width: 1023px)").matches) a.setOpen(false)
+        },
+      }
+    : null
 
   const send = (text: string) => {
     a.setDraft("")
@@ -103,11 +119,12 @@ export function QueryAssistant({
             hotkey={a.open}
             inputRef={dockInput}
             label="Ask a follow-up"
-            onEscape={() => a.setOpen(false)}
           />
         }
-        intro="Ask about the rows in your tables. I can write a SELECT, run it read-only and show what came back; Insert into editor puts the SQL in the editor as a new query."
+        intro={INTRO[context]}
       />
     </>
   )
 }
+
+export default SqlAssistant

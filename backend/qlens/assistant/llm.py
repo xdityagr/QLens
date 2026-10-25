@@ -56,7 +56,12 @@ class ModelStep:
 
 
 class ModelError(Exception):
-    """The model could not be reached or gave an unusable answer (the route turns it into a 502)."""
+    """The model could not be reached or gave an unusable answer (the route turns it into a 502, or a 429
+    when Gemini said the quota is used up)."""
+
+    def __init__(self, message: str, rate_limited: bool = False):
+        super().__init__(message)
+        self.rate_limited = rate_limited
 
 
 class ChatModel(Protocol):
@@ -110,7 +115,9 @@ class GeminiModel:
                                                             config=config)
         except Exception as e:  # SDK API errors, timeouts, connection errors; none of them carry the key
             log.warning("Gemini call failed: %s: %s", type(e).__name__, str(e)[:500])
-            raise ModelError(f"{type(e).__name__}: {e}") from None
+            # The SDK's APIError carries the HTTP status as .code; 429 is the free tier's quota.
+            limited = getattr(e, "code", None) == 429 or "RESOURCE_EXHAUSTED" in str(e)
+            raise ModelError(f"{type(e).__name__}: {e}", rate_limited=limited) from None
         candidate = response.candidates[0] if response.candidates else None
         if candidate is None or candidate.content is None:
             raise ModelError("The model returned no answer.")

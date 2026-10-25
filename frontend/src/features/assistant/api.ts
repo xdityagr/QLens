@@ -3,7 +3,8 @@ import type { Cell, ProposalOut } from "../../lib/types"
 
 // Mirrors backend/qlens/assistant/{routes,service}.py.
 
-export type AssistantContext = "design" | "query"
+/** the screen a conversation belongs to; only "design" may edit the draft design */
+export type AssistantContext = "design" | "query" | "data"
 export type Intent = "answer" | "edit"
 
 export interface AssistantAction {
@@ -77,6 +78,8 @@ const base = (wsId: number) => `/api/workspaces/${wsId}/assistant`
 export const assistantApi = {
   ask: (wsId: number, body: { message: string; conversation_id: number | null; context: AssistantContext }) =>
     api<AssistantReply>(base(wsId), { method: "POST", json: body }),
+  /** go back one design version without a model call (409 nothing_to_undo) */
+  undo: (wsId: number) => api<{ proposal: ProposalOut }>(`${base(wsId)}/undo`, { method: "POST" }),
   conversations: (wsId: number) => api<ConversationOut[]>(`${base(wsId)}/conversations`),
   conversation: (wsId: number, id: number) => api<ConversationDetail>(`${base(wsId)}/conversations/${id}`),
 }

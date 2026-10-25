@@ -1,6 +1,7 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query"
 import { useCallback, useEffect, useRef, useState } from "react"
 import type { DesignChange } from "../../lib/proposalDiff"
+import type { ProposalOut } from "../../lib/types"
 import { assistantApi, type AssistantContext, type AssistantReply } from "./api"
 import {
   chipFor,
@@ -8,7 +9,6 @@ import {
   friendlyError,
   presentationFor,
   threadFromDetail,
-  UNDO_MESSAGE,
   type EditSummary,
   type FriendlyError,
   type Turn,
@@ -30,6 +30,18 @@ export interface AssistantOptions {
    * the toast's count, or null when they can't be told.
    */
   onReply?: (reply: AssistantReply) => DesignChange[] | null | void
+  /** Apply the design an Undo went back to; returns its changes, as onReply does. */
+  onUndo?: (proposal: ProposalOut) => DesignChange[] | null | void
+}
+
+/** Run a screen's side effect without letting its bug lose the reply that is already back. */
+function guarded<T>(fn: (() => T) | undefined): T | null {
+  try {
+    return fn?.() ?? null
+  } catch (err) {
+    console.error("assistant: applying the reply failed", err)
+    return null
+  }
 }
 
 /**
@@ -37,12 +49,14 @@ export interface AssistantOptions {
  * pending until the whole reply is back; the reply then either opens the sidebar or, for a design edit,
  * shows a toast while the canvas animates.
  */
-export function useAssistant({ wsId, context, onReply }: AssistantOptions) {
+export function useAssistant({ wsId, context, onReply, onUndo }: AssistantOptions) {
   const qc = useQueryClient()
   const [conversationId, setConversationId] = useState<number | null>(null)
   const [turns, setTurns] = useState<Turn[]>([])
   const [pending, setPending] = useState<string | null>(null)
-  const [error, setError] = useState<{ error: FriendlyError; message: string } | null>(null)
+  // `message` is what Try again resends; `undo` marks a failed Undo, which Try again repeats instead
+  const [error, setError] = useState<{ error: FriendlyError; message: string; undo?: boolean } | null>(null)
+  const [undoing, setUndoing] = useState(false)
   const [open, setOpen] = useState(false)
   const [toast, setToast] = useState<EditToast | null>(null)
   const [draft, setDraft] = useState("")
@@ -51,8 +65,10 @@ export function useAssistant({ wsId, context, onReply }: AssistantOptions) {
   const convId = useRef<number | null>(null)
   const busy = useRef(false)
   const onReplyRef = useRef(onReply)
+  const onUndoRef = useRef(onUndo)
   useEffect(() => {
     onReplyRef.current = onReply
+    onUndoRef.current = onUndo
   })
 
   const ask = useCallback(
@@ -70,7 +86,7 @@ export function useAssistant({ wsId, context, onReply }: AssistantOptions) {
         const reply = await assistantApi.ask(wsId, { message, conversation_id: convId.current, context })
         convId.current = reply.conversation_id
         setConversationId(reply.conversation_id)
-        const changes = onReplyRef.current?.(reply) ?? null
+        const changes = guarded(() => onReplyRef.current?.(reply) ?? null)
         setTurns((t) => [
           ...t,
           {
@@ -106,18 +122,43 @@ export function useAssistant({ wsId, context, onReply }: AssistantOptions) {
     [wsId, context, qc],
   )
 
-  /** Send the failed message again (it stays in the thread once). */
+  /**
+   * The toast's Undo: the server's undo endpoint runs the assistant's undo tool directly, so it costs no
+   * model call and always goes back exactly one design version.
+   */
+  const undo = useCallback(async () => {
+    if (busy.current) return
+    busy.current = true
+    setUndoing(true)
+    setError(null)
+    try {
+      const r = await assistantApi.undo(wsId)
+      const changes = guarded(() => onUndoRef.current?.(r.proposal) ?? null)
+      const undone = { tool: "undo_last_edit", args: {}, ok: true, summary: "Undid the last design change" }
+      setToast({ key: Date.now(), summary: editSummary([undone], changes) })
+    } catch (e) {
+      setToast(null)
+      setError({ error: friendlyError(e), message: "", undo: true })
+    } finally {
+      busy.current = false
+      setUndoing(false)
+    }
+  }, [wsId])
+
+  /** Send the failed message again (it stays in the thread once), or repeat a failed Undo. */
   const retry = useCallback(() => {
     if (!error) return
+    if (error.undo) {
+      void undo()
+      return
+    }
     const message = error.message
     setTurns((t) => {
       const lastUser = t.map((x) => x.role).lastIndexOf("user")
       return lastUser >= 0 && t[lastUser].text === message ? t.slice(0, lastUser) : t
     })
     void ask(message)
-  }, [error, ask])
-
-  const undo = useCallback(() => void ask(UNDO_MESSAGE), [ask])
+  }, [error, ask, undo])
 
   const newChat = useCallback(() => {
     if (busy.current) return
@@ -170,6 +211,7 @@ export function useAssistant({ wsId, context, onReply }: AssistantOptions) {
     open,
     setOpen,
     toast,
+    undoing,
     dismissToast: () => setToast(null),
     draft,
     setDraft,

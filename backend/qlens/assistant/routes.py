@@ -6,7 +6,7 @@ from pydantic import BaseModel, Field, field_validator
 from qlens import db
 from qlens.assistant import service
 from qlens.assistant.llm import ChatModel, configured_model
-from qlens.assistant.service import AssistantReply, ConversationDetail, ConversationOut
+from qlens.assistant.service import AssistantReply, ConversationDetail, ConversationOut, UndoOut
 from qlens.auth.deps import owned_workspace
 from qlens.errors import ApiError
 from qlens.workspaces.service import WorkspaceRow
@@ -17,7 +17,7 @@ router = APIRouter(prefix="/workspaces/{workspace_id}/assistant", tags=["assista
 class AssistantIn(BaseModel):
     message: Annotated[str, Field(min_length=1, max_length=2000)]
     conversation_id: int | None = None
-    context: Literal["design", "query"] = "design"
+    context: Literal["design", "query", "data"] = "design"
 
     @field_validator("message")
     @classmethod
@@ -41,6 +41,12 @@ def chat_model() -> ChatModel:
 def ask(body: AssistantIn, conn: db.Conn, ws: WorkspaceRow = Depends(owned_workspace),
         model: ChatModel = Depends(chat_model)) -> AssistantReply:
     return service.respond(conn, ws.id, ws.owner_id, body.message, body.conversation_id, body.context, model)
+
+
+@router.post("/undo")
+def undo(conn: db.Conn, ws: WorkspaceRow = Depends(owned_workspace)) -> UndoOut:
+    """Go back one design version, as the assistant's undo tool does, without asking the model."""
+    return service.undo(conn, ws.id)
 
 
 @router.get("/conversations")

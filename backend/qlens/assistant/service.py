@@ -20,7 +20,7 @@ MAX_TOOL_ROUNDS = 6
 MAX_CALLS_PER_STEP = 8
 MAX_CALLS_PER_MESSAGE = 20
 HISTORY_MESSAGES = 20
-Context = Literal["design", "query"]
+Context = Literal["design", "query", "data"]
 
 
 class Action(BaseModel):
@@ -70,6 +70,13 @@ on the Design screen.
 QUERY_NOTE = """You are on the Query screen: answer questions and write/run read-only SELECTs on the applied \
 tables. Design edits are made on the Design screen, so you have no edit tools here.
 """
+
+DATA_NOTE = """You are on the Data screen: answer questions about the stored rows and write/run read-only \
+SELECTs on the applied tables. Design edits are made on the Design screen, so you have no edit tools here.
+"""
+
+# Screens other than Design only read: no edit tools, and a note that says so.
+NOTES: dict[str, str] = {"design": "", "query": QUERY_NOTE, "data": DATA_NOTE}
 
 
 def _summary(conn: psycopg.Connection, ws_id: int) -> str:
@@ -134,7 +141,7 @@ def respond(conn: psycopg.Connection, ws_id: int, user_id: int, message: str, co
     allowed = [t for t in tools.TOOLS.values() if context == "design" or not t.edit]
     specs = [ToolSpec(t.name, t.description, tools.schema_of(t)) for t in allowed]
     names = {t.name for t in allowed}
-    system = SYSTEM + (QUERY_NOTE if context == "query" else "") + "\nWorkspace now:\n" + _summary(conn, ws_id)
+    system = SYSTEM + NOTES[context] + "\nWorkspace now:\n" + _summary(conn, ws_id)
 
     ctx = tools.ToolContext(conn=conn, ws_id=ws_id)
     turns = [*history, Turn(role="user", text=message)]
@@ -165,6 +172,9 @@ def respond(conn: psycopg.Connection, ws_id: int, user_id: int, message: str, co
     except ModelError as e:
         # Raised, so the request transaction rolls back: no half-finished turn (or edit) is kept.
         log.warning("assistant model call failed: %s", str(e)[:500])
+        if e.rate_limited:
+            raise ApiError(429, "assistant_rate_limited", "The assistant is rate-limited (Gemini's free-tier "
+                           "quota). Try again in a minute.") from None
         raise ApiError(502, "assistant_upstream_error", "The assistant could not get an answer from Gemini. "
                        "Try again in a moment.") from None
 
@@ -187,6 +197,24 @@ def respond(conn: psycopg.Connection, ws_id: int, user_id: int, message: str, co
         conversation_id=cid, message_id=mid, intent=intent, reply=reply,
         actions=[Action(tool=n, args=a, ok=o.ok, summary=o.summary) for n, a, o in calls],
         proposal=live, sql_runs=[SqlRunOut(**vars(r)) for r in ctx.sql_runs])
+
+
+# ---- undo without the model ------------------------------------------------------------------------
+
+class UndoOut(BaseModel):
+    proposal: ProposalOut
+
+
+def undo(conn: psycopg.Connection, ws_id: int) -> UndoOut:
+    """The edit toast's Undo: the assistant's own undo_last_edit, run directly (no model call, so it costs no
+    quota and always does the same thing). It goes back one design version, dependency flips included."""
+    outcome = tools.execute(tools.ToolContext(conn=conn, ws_id=ws_id), "undo_last_edit", {})
+    if not outcome.ok:
+        code = outcome.result.get("code", "undo_failed")
+        status = 409 if code == "nothing_to_undo" else 404 if code == "no_dataset" else 400
+        raise ApiError(status, code, outcome.error or "Could not undo.")
+    ds = conn.execute("SELECT id FROM qlens.datasets WHERE workspace_id = %s", (ws_id,)).fetchone()
+    return UndoOut(proposal=proposal.live_proposal(conn, ds["id"]))
 
 
 # ---- reading conversations ------------------------------------------------------------------------

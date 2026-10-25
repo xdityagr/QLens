@@ -29,11 +29,11 @@ COMMENT ON COLUMN qlens.schema_proposals.fd_changes IS
 -- ---------------------------------------------------------------------------------------------
 
 -- One chat thread in a workspace. context is the screen it was started on: on the Design screen
--- the assistant may edit the draft design, on the Query screen it only answers and runs SELECTs.
+-- the assistant may edit the draft design, on the Query and Data screens it only answers and runs SELECTs.
 CREATE TABLE qlens.assistant_conversations (
     id           bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     workspace_id bigint NOT NULL REFERENCES qlens.workspaces (id) ON DELETE CASCADE,
-    context      text NOT NULL CHECK (context IN ('design', 'query')),
+    context      text NOT NULL CHECK (context IN ('design', 'query', 'data')),
     title        text NOT NULL CHECK (length(title) BETWEEN 1 AND 80),
     created_at   timestamptz NOT NULL DEFAULT now(),
     updated_at   timestamptz NOT NULL DEFAULT now()   -- maintained by touch_updated_at()

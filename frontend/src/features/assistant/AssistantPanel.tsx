@@ -1,5 +1,5 @@
 import { History, Plus, X } from "lucide-react"
-import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react"
+import { useLayoutEffect, useRef, useState, type ReactNode } from "react"
 import { createPortal } from "react-dom"
 import { IconButton } from "../../components/Button"
 import { Spinner } from "../../components/Spinner"
@@ -34,18 +34,6 @@ export function AssistantPanel({
   const firstUser = a.turns.find((t) => t.role === "user")?.text
   const title = firstUser ?? "New chat"
 
-  // Esc closes (the history menu first)
-  useEffect(() => {
-    if (!a.open) return
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key !== "Escape") return
-      if (historyOpen) setHistoryOpen(false)
-      else a.setOpen(false)
-    }
-    window.addEventListener("keydown", onKey)
-    return () => window.removeEventListener("keydown", onKey)
-  }, [a, historyOpen])
-
   // Follow the thread while it grows, but only if the reader is already at the bottom.
   const atBottom = useRef(true)
   useLayoutEffect(() => {
@@ -60,6 +48,14 @@ export function AssistantPanel({
       aria-label="Assistant"
       data-open={a.open}
       inert={!a.open}
+      // Esc inside the sidebar closes the history menu, then the sidebar. Only here: Esc in the editor,
+      // a dialog or elsewhere on the page is not ours, and a field that used Esc itself prevents default.
+      onKeyDown={(e) => {
+        if (e.key !== "Escape" || e.defaultPrevented) return
+        e.preventDefault()
+        if (historyOpen) setHistoryOpen(false)
+        else a.setOpen(false)
+      }}
       className="as-side fixed bottom-0 right-0 top-14 z-40 flex w-full flex-col border-l border-border bg-bg sm:w-[420px]"
     >
       <header className="relative flex h-12 shrink-0 items-center gap-1 border-b border-border pl-4 pr-1.5">
