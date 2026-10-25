@@ -1,7 +1,7 @@
 # Report status
 
-Build: `latexmk -pdf main.tex` (or `.\build.ps1` / `make`) -> `report/main.pdf`, 29 pages, no overfull boxes,
-no undefined references. Format: 12pt, 1.25 line spacing, TOC depth 1 (fits one page), short captions.
+Build: `latexmk -pdf main.tex` (or `.\build.ps1` / `make`) -> `report/main.pdf`, 28 pages, no overfull boxes,
+no undefined references. Format: 12pt, 1.15 line spacing, TOC depth 1 (fits one page), short captions.
 
 ## Structure (format order)
 Cover, Abstract, TOC, List of Figures, List of Tables; 1 Introduction (1.1 Scope of the Work, 1.2 Product
@@ -12,9 +12,10 @@ Appendix A (sample datasets, screen gallery).
 ## Status markers (update when built)
 - Built: import, discovery, clean-up, 3NF synthesis, proposal + DDL, apply + lossless check, landing,
   dashboard, Analyze.
-- In progress (`\stwip`): design canvas (FR-8), sandboxed query runner (FR-9, fig:seq-query), assistant (FR-10).
+- Built since: design canvas (FR-8), sandboxed query runner (FR-9). In progress (`\stwip`): assistant (FR-10).
 - Planned (`\stplan`): performance lab and step-through (FR-11).
-- Test counts: 229 backend (latest full run, query-runner tests excluded), 63 frontend.
+- Test counts: 302 backend, 63 frontend.
+- Database design (3.3.1-3.3.7): ER (qlens), relational schema, keys table, normalization, constraints + indexes, triggers/views/functions/roles, SQL-per-feature table, generated fee-register ER, example queries (real outputs from applied workspace 24).
 
 ## Figures
 architecture, er (one landscape page from er-part1 + er-part2), pipeline, usecase, fee-example,

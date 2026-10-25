@@ -1,0 +1,26 @@
+% ER diagram of the database QLens generates for the fee register (workspace schema ws_<id>),
+% from the generated DDL (design/ddl.py) of an applied proposal.
+\begin{figure}[htbp]
+\centering
+\begin{tikzpicture}[node distance=7mm]
+  \node[entity=lane3, anchor=north west] (fr) at (0,0) {\eh{fee\_register}\nodepart{two}\begin{attrs}
+    \PK & id & bigint\\ \FK & student\_id & bigint\\ & month & text\\ & fee\_paid & bigint\\ & payment\_mode & text?\\
+    \multicolumn{3}{@{}l@{}}{\color{lane5}\itshape UQ(student\_id, month)}\end{attrs}};
+  \node[entity=lane0, anchor=north west] (st) at (4.25,0) {\eh{students}\nodepart{two}\begin{attrs}
+    \PK & id & bigint\\ \UQ & student\_name & text\\ \UQ & student\_phone & text\\ \FK & batch\_id & bigint\end{attrs}};
+  \node[entity=lane1, anchor=north west] (ba) at (8.3,0) {\eh{batches}\nodepart{two}\begin{attrs}
+    \PK & id & bigint\\ \UQ & batch & text\\ \FK & teacher\_id & bigint\end{attrs}};
+  \node[entity=lane2, anchor=north west] (te) at (11.6,0) {\eh{teachers}\nodepart{two}\begin{attrs}
+    \PK & id & bigint\\ \UQ & teacher & text\\ \UQ & teacher\_phone & text\end{attrs}};
+  \draw[rel, {ER many}-{ER one}] ([yshift=-0.85cm]fr.north east) -- ([yshift=-0.85cm]st.north west);
+  \draw[rel, {ER many}-{ER one}] ([yshift=-0.85cm]st.north east) -- ([yshift=-0.85cm]ba.north west);
+  \draw[rel, {ER many}-{ER one}] ([yshift=-0.85cm]ba.north east) -- ([yshift=-0.85cm]te.north west);
+  \foreach \n/\r in {fr/{3{,}000 rows}, st/{300 rows}, ba/{8 rows}, te/{6 rows}}
+    \node[font=\sffamily\scriptsize\color{muted}, anchor=north west] at ([yshift=-1mm]\n.south west) {\r};
+\end{tikzpicture}
+\caption[ER diagram of the generated fee-register database]{ER diagram of the database QLens generates
+for the fee register. Every table has a surrogate identity key; natural keys are
+\code{UNIQUE NULLS NOT DISTINCT}; foreign keys are \code{NOT NULL} and \code{ON DELETE RESTRICT};
+\code{?} marks the only nullable column. Row counts are those of the applied design.}
+\label{fig:er-generated}
+\end{figure}

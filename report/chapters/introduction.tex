@@ -42,7 +42,7 @@ objectives were therefore:
 \begin{figure}[htbp]
   \centering
   \IfFileExists{screenshots/landing-hero.png}{%
-    \fcolorbox{rule}{white}{\includegraphics[width=0.8\linewidth]{screenshots/landing-hero.png}}}{}
+    \fcolorbox{rule}{white}{\includegraphics[width=0.72\linewidth]{screenshots/landing-hero.png}}}{}
   \caption[Landing page]{The QLens landing page: one messy sheet in, clean related tables out.}
   \label{fig:landing-hero}
 \end{figure}
@@ -65,7 +65,7 @@ hardening needed for public multi-tenant hosting. QLens runs locally on one lapt
 PostgreSQL 18 cluster.
 
 \paragraph{Status.} The report describes the system at the time of submission and marks each capability
-as \stdone{} (implemented and covered by automated tests: 229 backend tests and 63 frontend tests pass),
+as \stdone{} (implemented and covered by automated tests: 302 backend tests and 63 frontend tests pass),
 \stwip{} (partly implemented) or \stplan{} (designed, not yet started). Nothing is described as working
 unless it is marked \stdone.
 
@@ -86,16 +86,7 @@ approximate one, which shows where the legacy data cannot be trusted. The propos
 \code{CREATE TABLE} statements that can be copied into the application's migrations, or QLens can migrate
 the data itself and prove that nothing was lost.
 
-\paragraph{The student learning normalization.} \stdone{} for analysis and design, \stwip{} for querying.
-A student opens the hostel mess sample and sees why \code{room} determines \code{hostel\_block}, how the
-minimal cover is derived and why each table of the proposal exists, then queries the result. A
+\paragraph{The student learning normalization.} \stdone{} A student opens the hostel mess sample and
+sees why \code{room} determines \code{hostel\_block}, how the minimal cover is derived and why each table
+of the proposal exists, then queries the result with joins, grouping and window functions. A
 clause-by-clause visualizer and a performance laboratory with real execution plans are \stplan.
-
-\begin{figure}[htbp]
-  \centering
-  \IfFileExists{screenshots/dashboard-dark.png}{%
-    \fcolorbox{rule}{white}{\includegraphics[width=0.8\linewidth]{screenshots/dashboard-dark.png}}}{}
-  \caption[Workspace dashboard]{The workspace dashboard (dark theme): statistics, the workspace to
-  continue, and one-click sample sheets.}
-  \label{fig:dashboard}
-\end{figure}

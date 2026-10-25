@@ -40,7 +40,7 @@
   \node[chip=lane1, minimum width=2.2cm] (m3) at (6.15,-2.05) {ingest\\[-1pt]\tiny parse, stage, infer};
   \node[chip=lane1, minimum width=2.6cm] (m4) at (8.75,-2.05) {analysis\\[-1pt]\tiny discover, cleanup, fd\_algebra};
   \node[chip=lane1, minimum width=2.6cm] (m5) at (11.55,-2.05) {design\\[-1pt]\tiny naming, proposal, ddl, apply};
-  \node[chip=lane1, minimum width=1.7cm, todo] (m6) at (14.15,-2.05) {query\\[-1pt]\tiny validate, sandbox};
+  \node[chip=lane1, minimum width=1.7cm] (m6) at (14.15,-2.05) {query\\[-1pt]\tiny validate, sandbox};
   % modules, row 2
   \node[chip=lane1, minimum width=2.6cm, todo] (m7) at (1.55,-3.05) {perf lab\\[-1pt]\tiny lab, explain, advisor};
   \node[chip=lane1, minimum width=2.4cm, todo] (m8) at (4.3,-3.05) {stepthrough\\[-1pt]\tiny pglast stages};
@@ -56,7 +56,7 @@
      LOGIN, NOINHERIT, CONNECTION LIMIT 3 \textperiodcentered{} read-only by default\\
      \code{statement\_timeout} 5\,s \textperiodcentered{} idle-in-transaction 10\,s};
   \foreach \m in {m1,m2,m3,m4,m5} \draw[line width=0.4pt, draw=lane4!60] (\m.south) -- (\m.south |- pool.north);
-  \draw[line width=0.4pt, draw=lane3!60, todo] (m6.south) -- (m6.south |- sbx.north);
+  \draw[line width=0.4pt, draw=lane3!60] (m6.south) -- (m6.south |- sbx.north);
   \draw[line width=0.4pt, draw=lane3!60, todo] (m9.south) -- (m9.south |- sbx.north);
 
   % ---------------- external service ---------------------------------------------------------------
@@ -86,8 +86,8 @@
   \draw[flow, draw=lane4!80!black] ([xshift=1.4cm]pool.south) |- (6.2,-7.35) -| (src.north);
   \draw[flow, draw=lane4!80!black] (6.2,-7.35) -| ([xshift=-2mm]main.north);
   \node[note, anchor=west] at (5.12,-6.45) {DDL, COPY, cleanup};
-  \draw[flow, draw=lane3!90!black, todo] ([xshift=-1.2cm]sbx.south) -- ++(0,-0.5) -| ([xshift=6mm]src.north);
-  \draw[flow, draw=lane3!90!black, todo] ([xshift=1.0cm]sbx.south) -- ++(0,-0.5) -| ([xshift=3mm]main.north);
+  \draw[flow, draw=lane3!90!black] ([xshift=-1.2cm]sbx.south) -- ++(0,-0.5) -| ([xshift=6mm]src.north);
+  \draw[flow, draw=lane3!90!black] ([xshift=1.0cm]sbx.south) -- ++(0,-0.5) -| ([xshift=3mm]main.north);
   \draw[flow, draw=lane3!90!black, todo] ([xshift=2.9cm]sbx.south) -- ([xshift=2.9cm]sbx.south |- lab.north);
   \node[note, anchor=west] at ([xshift=3.0cm]sbx.south |- 0,-6.5) {SELECT only};
   % denied path to the metadata schema

@@ -10,7 +10,7 @@ the real rows, with \code{EXCEPT ALL} in both directions inside one transaction,
 On the fee register every planted problem is found and the expected four-table design rebuilds all
 3{,}000 rows exactly. Around this sits a 22-table metadata schema that uses generated columns, \code{CHECK}
 rules, partial unique indexes, triggers and window-function views, and a per-workspace login role that
-isolates users by privilege. 229 backend and 63 frontend tests pass.
+isolates users by privilege. 302 backend and 63 frontend tests pass.
 
 \paragraph{Lessons.} Dependencies in real data are statistical before they are logical, so measuring
 violations ($g_3$) and letting the user decide was the central design decision. Normalization needs clean
@@ -22,10 +22,9 @@ caught our own mistakes, such as an applied-design rule that let \code{NULL} pas
 \paragraph{Limitations.} Left-hand sides are limited to two columns and keys to three; noise filtering
 relies on thresholds, so the user keeps the final say; one flat sheet of up to 100{,}000 rows is
 normalized at a time, and only to 3NF; trigram similarity cannot know that two people share a name; and
-the evidence comes from synthetic samples and tests, not a user study. The query editor, design canvas
-and assistant are \stwip{}, and the performance laboratory and step-through visualizer are \stplan.
+the evidence comes from synthetic samples and tests, not a user study. The assistant is \stwip{}, and the performance laboratory and step-through visualizer are \stplan.
 
-\paragraph{Future work.} Completing the sandboxed editor and the canvas with its validated assistant; a
+\paragraph{Future work.} Completing the validated assistant; a
 performance laboratory that renders \code{EXPLAIN (ANALYZE, BUFFERS)} as a tree and times index
 experiments on a scaled copy; a clause-by-clause visualizer for teaching; wider dependency search with
 sampling and multivalued dependencies for 4NF; and resource limits for hosted, multi-tenant use, which the

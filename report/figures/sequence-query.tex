@@ -30,9 +30,9 @@
   \draw[msg] (2.75,-1.9) -- (5.2,-1.9) node[lab, midway, above=1pt] {validate\_select(sql)};
   \draw[ret] (5.2,-2.45) -- (2.75,-2.45) node[lab, midway, below=1pt] {one SELECT, no forbidden calls};
   \draw[msg] (2.75,-2.9) -- (7.85,-2.9) node[lab, pos=0.62, above=1pt] {connect as \code{qlens\_ws\_<id>} (password = HMAC of workspace id)};
-  \draw[msg] (8.05,-3.5) -- (10.5,-3.5) node[lab, midway, above=1pt] {BEGIN READ ONLY\\SET LOCAL statement\_timeout};
-  \draw[msg] (8.05,-4.4) -- (10.5,-4.4) node[lab, midway, above=1pt] {execute SELECT\\(search\_path = ws\_<id>, ws\_<id>\_src)};
-  \draw[ret] (10.5,-5.4) -- (8.05,-5.4) node[lab, midway, above=1pt] {rows: fetchmany(1001)};
+  \draw[msg] (8.05,-3.5) -- (10.5,-3.5) node[lab, midway, above=1pt] {BEGIN READ ONLY\\set\_config(statement\_timeout, local)};
+  \draw[msg] (8.05,-4.4) -- (10.5,-4.4) node[lab, midway, above=1pt] {DECLARE qlens\_run CURSOR FOR \textit{sql}\\(search\_path = ws\_<id>, ws\_<id>\_src)};
+  \draw[ret] (10.5,-5.4) -- (8.05,-5.4) node[lab, midway, above=1pt] {FETCH FORWARD 1001};
   \draw[msg] (8.05,-6.2) -- (10.5,-6.2) node[lab, midway, above=1pt] {ROLLBACK, close};
   \draw[ret] (7.85,-7.0) -- (2.75,-7.0) node[lab, midway, above=1pt] {QueryResult: $\le$1000 rows, truncated flag, duration};
 
@@ -52,6 +52,6 @@
 connection: it runs on a separate login as the workspace role, whose privileges reach only that
 workspace's schemas, inside a read-only transaction with a statement timeout and a row cap. The run is
 then recorded on the pooled connection, where a trigger maintains the saved query's statistics.
-(Runner in progress; the role, its settings, \code{query\_runs} and the trigger are built and tested.)}
+}
 \label{fig:seq-query}
 \end{figure}
