@@ -125,7 +125,7 @@ export function SamplesPanel({
 }: {
   onTry: (s: SampleMeta) => void
   pending: SampleMeta["name"] | null
-  error?: string | null
+  error?: ReactNode
   compact?: boolean
 }) {
   return (

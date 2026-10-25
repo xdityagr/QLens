@@ -5,6 +5,15 @@ import type { SampleName, WorkspaceOut } from "../../lib/types"
 import { uniqueName } from "./dashboard"
 import { WS_LIST_KEY, wsKey } from "./queries"
 
+export class SampleLoadError extends Error {
+  readonly workspace: WorkspaceOut
+  constructor(workspace: WorkspaceOut, message: string) {
+    super(message)
+    this.name = "SampleLoadError"
+    this.workspace = workspace
+  }
+}
+
 export interface SampleMeta {
   name: SampleName
   title: string
@@ -22,7 +31,7 @@ export const SAMPLES: SampleMeta[] = [
 
 /**
  * "Try a sample": create a workspace named after the sample, load the sample into it and open Analyze.
- * If loading fails after the workspace exists, open its Import step so the user can retry there.
+ * If loading fails after the workspace exists, stay on the dashboard and show a SampleLoadError naming it.
  */
 export function useTrySample() {
   const qc = useQueryClient()
@@ -42,15 +51,21 @@ export function useTrySample() {
       }
       try {
         await datasetApi.sample(ws.id, sample.name)
-        return { ws, imported: true }
-      } catch {
-        return { ws, imported: false }
+      } catch (e) {
+        // The workspace exists now; say so, and why the sample didn't load, instead of failing silently.
+        const why = e instanceof Error ? e.message : "unknown error"
+        throw new SampleLoadError(ws, `Created “${ws.name}”, but the sample didn't load: ${why}`)
       }
+      return ws
     },
-    onSuccess: ({ ws, imported }) => {
+    onSuccess: (ws) => {
       qc.invalidateQueries({ queryKey: wsKey(ws.id), exact: true })
       qc.invalidateQueries({ queryKey: WS_LIST_KEY, exact: true })
-      navigate(`/w/${ws.id}/${imported ? "analyze" : "import"}`)
+      navigate(`/w/${ws.id}/analyze`)
+    },
+    onError: (e) => {
+      // A half-made workspace still belongs in the list.
+      if (e instanceof SampleLoadError) qc.invalidateQueries({ queryKey: WS_LIST_KEY, exact: true })
     },
   })
 }

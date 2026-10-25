@@ -37,14 +37,14 @@ interface TableDef {
 }
 // Order matters: the first table holding a column shows it while it is still one sheet.
 const TABLES: TableDef[] = [
-  { name: "students", lane: 0, x: 8, y: 30, cols: ["sn", "sp", "b"] },
-  { name: "batches", lane: 1, x: 336, y: 30, cols: ["b", "t"] },
-  { name: "teachers", lane: 2, x: 404, y: 206, cols: ["t", "tp"] },
-  { name: "payments", lane: 3, x: 8, y: 206, cols: ["sn", "m", "f"] },
+  { name: "students", lane: 0, x: 8, y: 20, cols: ["sn", "sp", "b"] },
+  { name: "batches", lane: 1, x: 336, y: 20, cols: ["b", "t"] },
+  { name: "teachers", lane: 2, x: 404, y: 190, cols: ["t", "tp"] },
+  { name: "payments", lane: 3, x: 8, y: 190, cols: ["sn", "m", "f"] },
 ]
 
 const SHEET_X0 = 13
-const SHEET_Y = 132
+const SHEET_Y = 128
 const HEAD_H = 24
 const ROW_H = 22
 const TITLE_H = 22
@@ -134,7 +134,7 @@ export function Untangle({ className = "" }: { className?: string }) {
   return (
     <div ref={ref} className={className}>
       <svg
-        viewBox="0 0 600 360"
+        viewBox="0 0 600 336"
         className="block h-auto w-full overflow-visible"
         role="img"
         aria-label="A fee register sheet with seven columns separating into four tables: students, batches, teachers and payments, linked by foreign keys."
@@ -142,7 +142,7 @@ export function Untangle({ className = "" }: { className?: string }) {
       >
         {/* sheet chrome: fades out as the columns leave */}
         <g style={{ opacity: split ? 0 : 1, transition: "opacity 500ms ease" }}>
-          <text x={SHEET_X0} y={SHEET_Y - 14} fontSize={11} fill="var(--muted)">
+          <text x={SHEET_X0} y={SHEET_Y + HEAD_H + ROWS.length * ROW_H + 20} fontSize={11} fill="var(--muted)">
             fee_register.csv
           </text>
           <rect

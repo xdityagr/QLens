@@ -1,4 +1,4 @@
-import { Check } from "lucide-react"
+import { Check, Menu, X } from "lucide-react"
 import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from "react"
 import { Link } from "react-router"
 import { buttonClass } from "../../components/buttonClass"
@@ -29,32 +29,96 @@ function InView({ as: Tag = "div", className = "", children, threshold = 0.2, id
   )
 }
 
+const NAV_LINKS = [
+  { href: "#how", label: "How it works" },
+  { href: "#lossless", label: "Lossless check" },
+  { href: "#sql", label: "The SQL" },
+]
+
+/**
+ * Transparent over the hero, so its gradient runs to the top edge. Once the page scrolls it
+ * condenses into a floating glass pill. On small screens the links move into a menu.
+ */
 function Nav() {
+  const [scrolled, setScrolled] = useState(false)
+  const [open, setOpen] = useState(false)
+  useEffect(() => {
+    const onScroll = () => setScrolled(window.scrollY > 24)
+    onScroll()
+    window.addEventListener("scroll", onScroll, { passive: true })
+    return () => window.removeEventListener("scroll", onScroll)
+  }, [])
+  useEffect(() => {
+    if (!open) return
+    const onKey = (e: KeyboardEvent) => e.key === "Escape" && setOpen(false)
+    window.addEventListener("keydown", onKey)
+    return () => window.removeEventListener("keydown", onKey)
+  }, [open])
+
+  const pill = scrolled || open
   return (
-    <header className="sticky top-0 z-40 border-b border-transparent bg-[color-mix(in_oklab,var(--bg)_70%,transparent)] backdrop-blur-md">
-      <div className="mx-auto flex h-16 max-w-[1240px] items-center gap-6 px-4 sm:px-8">
+    <header className="pointer-events-none fixed inset-x-0 top-0 z-40 px-3 sm:px-6">
+      <div
+        data-pill={pill}
+        className="ld-nav pointer-events-auto mx-auto flex items-center gap-2 sm:gap-4"
+      >
         <Wordmark />
-        <nav className="hidden items-center gap-5 text-[14px] text-muted md:flex">
-          <a href="#how" className="hover:text-text">
-            How it works
-          </a>
-          <a href="#lossless" className="hover:text-text">
-            Lossless check
-          </a>
-          <a href="#sql" className="hover:text-text">
-            The SQL
-          </a>
+        <nav aria-label="Sections" className="ml-4 hidden items-center gap-1 md:flex">
+          {NAV_LINKS.map((l) => (
+            <a
+              key={l.href}
+              href={l.href}
+              className="rounded-full px-3 py-1.5 text-[14px] text-muted transition-colors duration-150 hover:bg-[color-mix(in_oklab,var(--text)_7%,transparent)] hover:text-text"
+            >
+              {l.label}
+            </a>
+          ))}
         </nav>
-        <div className="ml-auto flex items-center gap-1.5 sm:gap-2">
-          <ThemeToggle />
-          <Link to="/login" className={buttonClass("ghost", "sm")}>
+        <div className="ml-auto flex items-center gap-1">
+          <span className="[&>button]:rounded-full">
+            <ThemeToggle />
+          </span>
+          <Link
+            to="/login"
+            className="hidden h-9 items-center rounded-full px-3.5 text-[14px] text-muted transition-colors duration-150 hover:bg-[color-mix(in_oklab,var(--text)_7%,transparent)] hover:text-text sm:inline-flex"
+          >
             Sign in
           </Link>
-          <Link to="/signup" className={buttonClass("primary", "sm")}>
-            Create account
-          </Link>
+          {/* wrapper owns the breakpoint: buttonClass sets its own display */}
+          <span className="ml-1 hidden sm:block">
+            <Link to="/signup" className={`${buttonClass("primary", "sm")} h-9 rounded-full! px-4`}>
+              Create account
+            </Link>
+          </span>
+          <button
+            type="button"
+            aria-label={open ? "Close menu" : "Open menu"}
+            aria-expanded={open}
+            aria-controls="ld-menu"
+            onClick={() => setOpen((o) => !o)}
+            className="grid size-9 place-items-center rounded-full text-muted transition-colors hover:bg-[color-mix(in_oklab,var(--text)_7%,transparent)] hover:text-text md:hidden"
+          >
+            {open ? <X size={18} strokeWidth={1.75} /> : <Menu size={18} strokeWidth={1.75} />}
+          </button>
         </div>
       </div>
+      {open && (
+        <div id="ld-menu" className="ld-menu pointer-events-auto mx-auto mt-2 max-w-[560px] p-2 md:hidden">
+          {NAV_LINKS.map((l) => (
+            <a key={l.href} href={l.href} onClick={() => setOpen(false)} className="block rounded-[12px] px-4 py-3 text-[15px] text-text hover:bg-hover">
+              {l.label}
+            </a>
+          ))}
+          <div className="mt-2 grid grid-cols-2 gap-2 border-t border-border p-2 pt-3">
+            <Link to="/login" className={`${buttonClass("secondary")} rounded-full!`}>
+              Sign in
+            </Link>
+            <Link to="/signup" className={`${buttonClass("primary")} rounded-full!`}>
+              Create account
+            </Link>
+          </div>
+        </div>
+      )}
     </header>
   )
 }
@@ -82,12 +146,13 @@ function Hero() {
   }, [reduced])
 
   return (
-    <section ref={ref} className="relative isolate -mt-16 overflow-hidden pt-16">
+    <section ref={ref} className="relative isolate overflow-hidden pt-[72px]">
       <GrainField lanes={[0, 1, 5]} strength={0.3} className="ld-parallax-slow" />
-      <div className="relative mx-auto grid max-w-[1240px] items-center gap-12 px-4 pb-20 pt-14 sm:px-8 lg:min-h-[calc(100dvh-4rem)] lg:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)] lg:gap-10 lg:pb-24 lg:pt-10">
+      <div className="relative mx-auto grid max-w-[1240px] items-center gap-12 px-4 pb-20 pt-14 sm:px-8 lg:min-h-[calc(100dvh-72px)] lg:grid-cols-[minmax(0,1.1fr)_minmax(0,1fr)] lg:gap-14 lg:pb-24 lg:pt-6">
         <div className="ld-parallax-fade">
-          <h1 className="ld-display max-w-[11ch] text-[52px] text-text sm:text-[72px] xl:text-[92px]">
-            One messy sheet in. Clean, related tables out.
+          <h1 className="ld-display text-[clamp(42px,3.9vw,56px)] text-text">
+            <span className="block">One messy sheet in.</span>
+            <span className="block">Clean, related tables out.</span>
           </h1>
           <p className="mt-7 max-w-[46ch] text-[16px] leading-relaxed text-muted sm:text-[17px]">
             QLens reads the dependencies hiding in a spreadsheet, splits it into normalized PostgreSQL tables, and
@@ -149,15 +214,19 @@ function HowItWorks() {
           </p>
         </InView>
 
-        <InView className="relative mt-16" threshold={0.15}>
+        {/* No observer around the whole list: each step reveals on its own, so on a phone steps 2-4
+            don't play while they're still off screen. The connector has its own observer. */}
+        <div className="relative mt-16">
           {/* the lane that ties the four steps together, like a branch in a commit graph */}
-          <svg aria-hidden className="absolute left-0 top-[11px] hidden h-[2px] w-full lg:block" preserveAspectRatio="none" viewBox="0 0 100 2">
-            <path d="M0 1 H100" className="ld-draw" pathLength={1} stroke="var(--border-strong)" strokeWidth={2} vectorEffect="non-scaling-stroke" />
-          </svg>
+          <InView className="absolute left-0 top-[11px] hidden h-[2px] w-full lg:block" threshold={0.1}>
+            <svg aria-hidden className="block h-[2px] w-full" preserveAspectRatio="none" viewBox="0 0 100 2">
+              <path d="M0 1 H100" className="ld-draw" pathLength={1} stroke="var(--border-strong)" strokeWidth={2} vectorEffect="non-scaling-stroke" />
+            </svg>
+          </InView>
           <ol className="grid gap-x-6 gap-y-14 md:grid-cols-2 lg:grid-cols-4">
             {STEPS.map((s, i) => (
               <li key={s.title} className="relative">
-                <InView threshold={0.35}>
+                <InView threshold={0.2}>
                   <div className="ld-reveal relative flex w-fit items-center gap-3 bg-bg pr-4" style={d(i * 140)}>
                     <span
                       className="relative grid size-6 place-items-center rounded-full text-[11px] font-semibold"
@@ -180,14 +249,14 @@ function HowItWorks() {
               </li>
             ))}
           </ol>
-        </InView>
+        </div>
       </div>
     </section>
   )
 }
 
 function Lossless() {
-  const [ref, inView] = useInView<HTMLDivElement>({ threshold: 0.4 })
+  const [ref, inView] = useInView<HTMLDivElement>({ threshold: 0.2 })
   const staging = useCountUp(3000, inView, 1400)
   const rebuilt = useCountUp(3000, inView, 1900)
   const done = rebuilt >= 3000
@@ -249,7 +318,7 @@ function Lossless() {
 const COMMAND = "rename students to learners"
 
 function AssistantTeaser() {
-  const [ref, inView] = useInView<HTMLDivElement>({ once: false, threshold: 0.4 })
+  const [ref, inView] = useInView<HTMLDivElement>({ once: false, threshold: 0.2 })
   const reduced = useReducedMotion()
   const [typed, setTyped] = useState(0)
   const [applied, setApplied] = useState(false)

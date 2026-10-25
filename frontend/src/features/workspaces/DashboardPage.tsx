@@ -1,5 +1,6 @@
 import { Plus, RotateCw } from "lucide-react"
 import { useMemo, useState } from "react"
+import { Link } from "react-router"
 import { Button } from "../../components/Button"
 import { EmptyState } from "../../components/EmptyState"
 import { NoiseBackdrop } from "../../components/NoiseBackdrop"
@@ -12,7 +13,7 @@ import { dashboardStats, greeting, mostRecent } from "./dashboard"
 import { ActivityList, ContinueCard, SamplesPanel, StatsRow } from "./DashboardParts"
 import { HeroGraph } from "./HeroGraph"
 import { useWorkspaces } from "./queries"
-import { useTrySample } from "./useTrySample"
+import { SampleLoadError, useTrySample } from "./useTrySample"
 import { WorkspaceCard } from "./WorkspaceCard"
 import { DeleteWorkspaceDialog, NewWorkspaceDialog } from "./WorkspaceDialogs"
 
@@ -40,7 +41,21 @@ export function DashboardPage() {
     <SamplesPanel
       onTry={(s) => trySample.mutate(s)}
       pending={trySample.isPending ? (trySample.variables?.name ?? null) : null}
-      error={trySample.error?.message}
+      error={
+        trySample.error && (
+          <>
+            {trySample.error.message}{" "}
+            {trySample.error instanceof SampleLoadError && (
+              <Link
+                to={`/w/${trySample.error.workspace.id}/import`}
+                className="font-medium text-text underline underline-offset-2"
+              >
+                Open it to import a sheet
+              </Link>
+            )}
+          </>
+        )
+      }
       compact={empty}
     />
   )
