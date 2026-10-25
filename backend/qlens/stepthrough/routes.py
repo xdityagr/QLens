@@ -1,3 +1,5 @@
+import logging
+
 from fastapi import APIRouter, Depends
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
@@ -12,6 +14,7 @@ from qlens.stepthrough.stages import StageOut, run_stages
 from qlens.workspaces.service import WorkspaceRow
 
 router = APIRouter(prefix="/workspaces/{workspace_id}", tags=["stepthrough"])
+log = logging.getLogger(__name__)
 
 
 class StepThroughIn(BaseModel):
@@ -28,6 +31,7 @@ def stepthrough(body: StepThroughIn, conn: db.Conn, ws: WorkspaceRow = Depends(o
         except (ApiError, QueryError):
             raise
         except Exception:  # noqa: BLE001 - as in /query: whatever the checker or deparser chokes on gets a plain answer
+            log.exception("step-through failed unexpectedly (workspace %s)", ws.id)
             raise ApiError(422, "stepthrough_unsupported",
                            "This query could not be split into stages. Simplify it and try again.") from None
     except (ApiError, QueryError) as e:

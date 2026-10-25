@@ -14,6 +14,7 @@ builder and the recursive deparser far from their limits.
 """
 
 import json
+import time
 from typing import Literal
 
 from pglast import ast, parse_sql, parser
@@ -28,6 +29,12 @@ from qlens.query.validate import validate_select
 StageKind = Literal["from", "where", "group_by", "having", "select", "distinct", "order_limit"]
 
 SAMPLE_ROWS = 50
+# All statements of one step-through share this budget, so a slow query holds the request for at most ~15 s
+# rather than (stage + count) x 7 x 5 s. Each statement still gets at most the sandbox's own 5 s.
+TOTAL_BUDGET_MS = 15_000
+_MIN_STATEMENT_MS = 50
+TOO_SLOW = "This query is too slow to step through. Try adding a WHERE or a LIMIT so each stage has fewer rows."
+_now = time.monotonic  # replaced in tests
 # A three-join lab query with a subquery in WHERE is ~40 levels deep; `1+1+...` adds two levels per operator.
 MAX_DEPTH = 300
 
@@ -227,12 +234,16 @@ def _build(stmt: ast.SelectStmt) -> list[StageSql]:
                            title="Projection (SELECT)", symbol="π"))
     if stmt.distinctClause:
         on = [d for d in stmt.distinctClause if d is not None]
-        stages.append(StageSql(kind="distinct", sql=_select(stmt, **unordered),
+        # DISTINCT ON keeps the first row of each group in ORDER BY order, so it keeps its ORDER BY.
+        kept = dict(unordered, sortClause=stmt.sortClause) if on else unordered
+        stages.append(StageSql(kind="distinct", sql=_select(stmt, **kept),
                                title="Duplicate elimination (DISTINCT)", symbol="δ",
                                clause=", ".join(_sql(d) for d in on)))
     if stmt.sortClause or stmt.limitCount is not None or stmt.limitOffset is not None:
         title, verb = _order_title(stmt)
-        stages.append(StageSql(kind="order_limit", sql=_statement(stmt), title=title, symbol="τ", clause=verb))
+        final = _statement(stmt)
+        if final != stages[-1].sql:  # a DISTINCT ON stage may already be the whole query
+            stages.append(StageSql(kind="order_limit", sql=final, title=title, symbol="τ", clause=verb))
     return stages
 
 
@@ -265,23 +276,33 @@ def _caption(st: StageSql, n: int, prev: int | None) -> str:
 _FILTERS = {("from", "where"), ("group_by", "having"), ("select", "distinct")}
 
 
-def run_stages(ws_id: int, sql_text: str) -> list[StageOut]:
+def _run(ws_id: int, sql_text: str, deadline: float, max_rows: int) -> sandbox.QueryResult:
+    remaining = (deadline - _now()) * 1000
+    if remaining < _MIN_STATEMENT_MS:
+        raise sandbox.QueryError("timeout", TOO_SLOW)
+    try:
+        timeout_ms = int(min(sandbox.MAX_TIMEOUT_MS, remaining))
+        return sandbox.run(ws_id, sql_text, max_rows=max_rows, timeout_ms=timeout_ms)
+    except sandbox.QueryError as e:
+        # position is dropped: it would point into the stage SQL, not the user's text
+        message = TOO_SLOW if e.code == "timeout" else e.message
+        raise sandbox.QueryError(e.code, message, e.sqlstate, None, e.duration_ms) from None
+
+
+def run_stages(ws_id: int, sql_text: str, budget_ms: int = TOTAL_BUDGET_MS) -> list[StageOut]:
     """Run every stage as the workspace role: up to 50 sample rows, and the full count when there are more.
 
-    Raises sandbox.QueryError from the first stage that fails (its position refers to the stage SQL, not the
-    user's text, so it is dropped).
+    All statements share one time budget; each gets min(5 s, what is left). Raises sandbox.QueryError from the
+    first stage that fails, or code "timeout" once the budget is spent.
     """
+    deadline = _now() + budget_ms / 1000
     out: list[StageOut] = []
     for st in build_stages(sql_text):
-        try:
-            res = sandbox.run(ws_id, st.sql, max_rows=SAMPLE_ROWS)
-            n, duration = res.row_count, res.duration_ms
-            if res.truncated:
-                counted = sandbox.run(ws_id, f"SELECT count(*) FROM ({st.sql}) AS s", max_rows=1)
-                n, duration = int(counted.rows[0][0]), counted.duration_ms  # the count evaluates the whole stage
-        except sandbox.QueryError as e:
-            e.position = None
-            raise
+        res = _run(ws_id, st.sql, deadline, SAMPLE_ROWS)
+        n, duration = res.row_count, res.duration_ms
+        if res.truncated:
+            counted = _run(ws_id, f"SELECT count(*) FROM ({st.sql}) AS s", deadline, 1)
+            n, duration = int(counted.rows[0][0]), counted.duration_ms  # the count evaluates the whole stage
         # "removed" compares like with like: rows with rows, groups with groups.
         prev = out[-1].row_count if out and (out[-1].kind, st.kind) in _FILTERS else None
         out.append(StageOut(kind=st.kind, title=st.title, symbol=st.symbol, caption=_caption(st, n, prev),

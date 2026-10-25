@@ -133,3 +133,61 @@ def test_stepthrough_route_db_error(client, applied_fee):
     assert client.post("/api/auth/login", json=FIXTURE_USER).status_code == 200
     r = client.post(f"/api/workspaces/{applied_fee.id}/stepthrough", json={"sql": "SELECT nope FROM students"})
     assert r.status_code == 400 and r.json()["error"]["code"] == "db_error"
+
+
+# ---- review round 1 ---------------------------------------------------------------------------------
+
+def test_having_without_group_by_and_plain_aggregate():
+    assert _kinds("SELECT count(*) FROM students HAVING count(*) > 5") == ["from", "having", "select"]
+    s = _by_kind("SELECT count(*) FROM students HAVING count(*) > 5")
+    assert s["having"] == "SELECT count(*) AS rows_in_group\nFROM students\nHAVING count(*) > 5"
+    assert _kinds("SELECT count(*) FROM students WHERE id > 5") == ["from", "where", "select"]
+
+
+def test_distinct_on_keeps_its_order_by():
+    # DISTINCT ON keeps the first row of each group *in ORDER BY order*; without it the stage would pick arbitrarily.
+    s = _by_kind("SELECT DISTINCT ON (batch_id) batch_id, id FROM students ORDER BY batch_id, id DESC LIMIT 5")
+    assert s["distinct"].endswith("ORDER BY batch_id, id DESC") and "LIMIT" not in s["distinct"]
+    assert "ORDER BY" not in s["select"]
+    assert s["order_limit"].endswith("LIMIT 5")
+    # with nothing left to add, the sort stage would repeat the DISTINCT ON stage
+    assert _kinds("SELECT DISTINCT ON (batch_id) batch_id, id FROM students ORDER BY batch_id, id") == [
+        "from", "select", "distinct"]
+
+
+def test_time_budget_caps_each_statement_and_the_total(monkeypatch):
+    from qlens.query.sandbox import QueryError, QueryResult
+    from qlens.stepthrough import stages
+
+    clock = {"t": 0.0}
+    timeouts: list[int] = []
+
+    def slow_run(ws_id, sql, *, max_rows, timeout_ms, **_):
+        timeouts.append(timeout_ms)
+        clock["t"] += 4.0  # every statement takes 4 s
+        return QueryResult(columns=[{"name": "n", "type": "bigint"}], rows=[[1]], row_count=1, truncated=False,
+                           duration_ms=4000)
+
+    monkeypatch.setattr(stages, "_now", lambda: clock["t"])
+    monkeypatch.setattr(stages.sandbox, "run", slow_run)
+    with pytest.raises(QueryError) as e:
+        stages.run_stages(1, Q)  # six stages x 4 s > the 15 s budget
+    assert e.value.code == "timeout" and "too slow to step through" in e.value.message
+    assert timeouts == [5000, 5000, 5000, 3000]  # the last statement only gets what is left of the budget
+
+
+def test_slow_query_hits_the_budget_for_real(applied_fee):
+    from qlens.query.sandbox import QueryError
+
+    # each row sleeps 10 ms: the 50-row sample is quick, counting all 300 rows is not
+    with pytest.raises(QueryError) as e:
+        run_stages(applied_fee.id, "SELECT * FROM students WHERE pg_sleep(0.01) IS NOT NULL", budget_ms=1500)
+    assert e.value.code == "timeout" and str(e.value) == e.value.message
+    assert e.value.message.startswith("This query is too slow to step through")
+
+
+def test_run_having_without_group_by(applied_fee):
+    st = run_stages(applied_fee.id, "SELECT count(*) AS n FROM students HAVING count(*) > 5")
+    assert [s.kind for s in st] == ["from", "having", "select"]
+    assert st[1].row_count == 1 and st[1].caption == "Keep groups where count(*) > 5: 1 group"
+    assert st[-1].rows == [[300]]

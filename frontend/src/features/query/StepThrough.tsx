@@ -1,6 +1,6 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query"
 import { AlertTriangle, ChevronLeft, ChevronRight, Clock, Pause, Play, RotateCcw } from "lucide-react"
-import { useEffect, useRef, useState, type CSSProperties, type KeyboardEvent } from "react"
+import { useEffect, useId, useRef, useState, type CSSProperties, type KeyboardEvent } from "react"
 import { Button, IconButton } from "../../components/Button"
 import { DataGrid } from "../../components/DataGrid"
 import { Spinner } from "../../components/Spinner"
@@ -93,6 +93,9 @@ function Stages({
   const [dir, setDir] = useState(1)
   const [playing, setPlaying] = useState(false)
   const stops = useRef<(HTMLButtonElement | null)[]>([])
+  const uid = useId() // several step-throughs may be on one page
+  const tabId = (i: number) => `${uid}-stage-${i}`
+  const panelId = `${uid}-panel`
   const n = stages.length
   const max = Math.max(...stages.map((s) => s.row_count), 0)
 
@@ -224,9 +227,9 @@ function Stages({
               }}
               type="button"
               role="tab"
-              id={`st-tab-${i}`}
+              id={tabId(i)}
               aria-selected={i === sel}
-              aria-controls="st-panel"
+              aria-controls={panelId}
               tabIndex={i === sel ? 0 : -1}
               data-passed={i <= sel}
               onClick={() => manual(i)}
@@ -256,15 +259,19 @@ function Stages({
       </div>
 
       <div
-        id="st-panel"
+        id={panelId}
         role="tabpanel"
-        aria-labelledby={`st-tab-${sel}`}
+        aria-labelledby={tabId(sel)}
         key={sel}
         className="st-detail mt-5"
         style={{ "--st-dir": dir } as CSSProperties}
       >
         <StageDetail stage={stage} prev={prev} index={sel} total={n} />
       </div>
+      {/* outside the keyed panel, so it persists and announces each stage change once */}
+      <p className="sr-only" aria-live="polite">
+        {`Stage ${sel + 1} of ${n}, ${stage.title}. ${stage.caption}`}
+      </p>
     </div>
   )
 }
@@ -303,18 +310,22 @@ function StageDetail({
             <span className="font-mono text-[13px] font-normal text-muted">{clauseOf(stage.title)}</span>
           </h3>
         </div>
-        <p className="font-mono text-[15px] tabular-nums" aria-live="polite">
-          {prev && (
-            <>
-              <span className="text-muted">{fmtInt(prev.row_count)}</span>
-              <span aria-hidden className="mx-2 text-faint">
-                →
-              </span>
-              <span className="sr-only"> to </span>
-            </>
-          )}
-          <span className="font-medium text-text">{fmtInt(shown)}</span>
-          <span className="ml-1.5 font-sans text-[13px] text-muted">{unit}</span>
+        <p className="font-mono text-[15px] tabular-nums">
+          {/* the eased number is for the eye; screen readers get the final count once */}
+          <span aria-hidden>
+            {prev && (
+              <>
+                <span className="text-muted">{fmtInt(prev.row_count)}</span>
+                <span className="mx-2 text-faint">→</span>
+              </>
+            )}
+            <span className="font-medium text-text">{fmtInt(shown)}</span>
+            <span className="ml-1.5 font-sans text-[13px] text-muted">{unit}</span>
+          </span>
+          <span className="sr-only">
+            {prev ? `${fmtInt(prev.row_count)} to ` : ""}
+            {fmtInt(stage.row_count)} {unit}
+          </span>
         </p>
       </div>
       <p className="mt-2 max-w-[80ch] break-words text-[14px] leading-relaxed text-text">{stage.caption}</p>
