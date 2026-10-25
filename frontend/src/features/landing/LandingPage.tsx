@@ -42,6 +42,15 @@ const NAV_LINKS = [
 function Nav() {
   const [scrolled, setScrolled] = useState(false)
   const [open, setOpen] = useState(false)
+  const toggleRef = useRef<HTMLButtonElement>(null)
+  const menuRef = useRef<HTMLDivElement>(null)
+  // Closing from inside the menu unmounts the focused element, so hand focus back to the toggle.
+  // For a section link the browser's fragment navigation runs after this handler and resets focus,
+  // so the hand-back waits a frame.
+  const closeMenu = () => {
+    setOpen(false)
+    requestAnimationFrame(() => toggleRef.current?.focus())
+  }
   useEffect(() => {
     const onScroll = () => setScrolled(window.scrollY > 24)
     onScroll()
@@ -50,7 +59,12 @@ function Nav() {
   }, [])
   useEffect(() => {
     if (!open) return
-    const onKey = (e: KeyboardEvent) => e.key === "Escape" && setOpen(false)
+    menuRef.current?.querySelector<HTMLElement>("a")?.focus()
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== "Escape") return
+      setOpen(false)
+      toggleRef.current?.focus()
+    }
     window.addEventListener("keydown", onKey)
     return () => window.removeEventListener("keydown", onKey)
   }, [open])
@@ -94,6 +108,7 @@ function Nav() {
             type="button"
             aria-label={open ? "Close menu" : "Open menu"}
             aria-expanded={open}
+            ref={toggleRef}
             aria-controls="ld-menu"
             onClick={() => setOpen((o) => !o)}
             className="grid size-9 place-items-center rounded-full text-muted transition-colors hover:bg-[color-mix(in_oklab,var(--text)_7%,transparent)] hover:text-text md:hidden"
@@ -103,9 +118,9 @@ function Nav() {
         </div>
       </div>
       {open && (
-        <div id="ld-menu" className="ld-menu pointer-events-auto mx-auto mt-2 max-w-[560px] p-2 md:hidden">
+        <div id="ld-menu" ref={menuRef} className="ld-menu pointer-events-auto mx-auto mt-2 max-w-[560px] p-2 md:hidden">
           {NAV_LINKS.map((l) => (
-            <a key={l.href} href={l.href} onClick={() => setOpen(false)} className="block rounded-[12px] px-4 py-3 text-[15px] text-text hover:bg-hover">
+            <a key={l.href} href={l.href} onClick={closeMenu} className="block rounded-[12px] px-4 py-3 text-[15px] text-text hover:bg-hover">
               {l.label}
             </a>
           ))}
@@ -205,7 +220,7 @@ const STEPS: { title: string; body: string; lane: number; visual: ReactNode }[] 
 
 function HowItWorks() {
   return (
-    <section id="how" className="relative border-t border-border">
+    <section id="how" className="relative scroll-mt-4 border-t border-border">
       <div className="mx-auto max-w-[1240px] px-4 py-24 sm:px-8 sm:py-32">
         <InView className="max-w-[640px]">
           <h2 className="ld-reveal ld-display text-[40px] text-text sm:text-[60px]">Four steps, all of them SQL.</h2>
@@ -261,7 +276,7 @@ function Lossless() {
   const rebuilt = useCountUp(3000, inView, 1900)
   const done = rebuilt >= 3000
   return (
-    <section id="lossless" className="relative isolate overflow-hidden border-t border-border">
+    <section id="lossless" className="relative isolate scroll-mt-4 overflow-hidden border-t border-border">
       <GrainField lanes={[4, 5]} strength={0.16} />
       <div ref={ref} data-in={inView} className="relative mx-auto grid max-w-[1240px] items-center gap-14 px-4 py-24 sm:px-8 sm:py-32 lg:grid-cols-2">
         <div>
@@ -477,7 +492,7 @@ function Sql({ code }: { code: string }) {
 
 function SqlStrip() {
   return (
-    <section id="sql" className="relative border-t border-border">
+    <section id="sql" className="relative scroll-mt-4 border-t border-border">
       <InView className="mx-auto max-w-[1240px] px-4 py-24 sm:px-8 sm:py-32">
         <h2 className="ld-reveal ld-display max-w-[16ch] text-[40px] text-text sm:text-[56px]">SQL under the hood.</h2>
         <p className="ld-reveal mt-5 max-w-[56ch] text-[16px] leading-relaxed text-muted" style={d(100)}>
