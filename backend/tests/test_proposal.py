@@ -88,6 +88,34 @@ def test_build_supersedes_the_draft_and_is_deterministic(conn, fee_ws_clean):
     assert shape(first) == shape(second)
 
 
+def mark_applied(conn, proposal_id):
+    """What Task 11 does after a lossless apply."""
+    conn.execute("UPDATE qlens.schema_proposals SET status = 'applied', lossless_ok = true WHERE id = %s",
+                 (proposal_id,))
+
+
+def status_of(conn, proposal_id):
+    return conn.execute("SELECT status FROM qlens.schema_proposals WHERE id = %s", (proposal_id,)).fetchone()["status"]
+
+
+def test_build_keeps_the_applied_proposal(conn, fee_ws_clean):
+    applied = build(conn, fee_ws_clean.dataset_id)
+    mark_applied(conn, applied.id)
+    draft = build(conn, fee_ws_clean.dataset_id)
+    assert (status_of(conn, applied.id), draft.status) == ("applied", "draft")
+    # The draft is what the user is editing, so it is the one shown.
+    assert live_proposal(conn, fee_ws_clean.dataset_id).id == draft.id
+    newer = build(conn, fee_ws_clean.dataset_id)
+    assert [status_of(conn, i) for i in (applied.id, draft.id, newer.id)] == ["applied", "superseded", "draft"]
+
+
+def test_applied_proposal_is_shown_when_there_is_no_draft(conn, fee_ws_clean):
+    p = build(conn, fee_ws_clean.dataset_id)
+    mark_applied(conn, p.id)
+    shown = live_proposal(conn, fee_ws_clean.dataset_id)
+    assert (shown.id, shown.status, shown.lossless_ok) == (p.id, "applied", True)
+
+
 def test_hostel_and_kirana_proposals(conn, hostel_ws, kirana_ws):
     accept_all(conn, hostel_ws.dataset_id)
     accept_all(conn, kirana_ws.dataset_id)
@@ -319,6 +347,36 @@ def test_rename_validation(client, fee_ws_clean):
     assert client.patch(f"{base}/columns/999999", json={"name": "x"}).status_code == 404
 
 
+def test_explanations_follow_renames(client, fee_ws_clean):
+    client.post("/api/auth/login", json=FIXTURE_LOGIN)
+    base = f"/api/workspaces/{fee_ws_clean.id}/proposal"
+    p = client.post(base).json()
+    students = next(t for t in p["tables"] if t["name"] == "students")
+    p = client.patch(f"{base}/tables/{students['id']}", json={"name": "learners"}).json()
+    fact = next(t for t in p["tables"] if t["kind"] == "fact")
+    assert fact["explanation"] == ("One row per original sheet row, identified by Student Name + Month. "
+                                   "It points to learners instead of repeating their details.")
+    assert client.get(base).json()["tables"] == p["tables"]
+
+
+def test_renames_only_on_a_draft(client, conn, fee_ws_clean):
+    client.post("/api/auth/login", json=FIXTURE_LOGIN)
+    base = f"/api/workspaces/{fee_ws_clean.id}/proposal"
+    first = client.post(base).json()
+    conn.execute("UPDATE qlens.schema_proposals SET status = 'applied', lossless_ok = true WHERE id = %s",
+                 (first["id"],))
+    conn.commit()
+    table_url = f"{base}/tables/{first['tables'][0]['id']}"
+    column_url = f"{base}/columns/{first['tables'][0]['columns'][1]['id']}"
+    for url in (table_url, column_url):
+        r = client.patch(url, json={"name": "renamed"})
+        assert r.status_code == 409 and r.json()["error"]["code"] == "proposal_not_draft", url
+    second = client.post(base).json()                 # a draft next to the applied one
+    client.post(base)                                 # supersedes `second`
+    r = client.patch(f"{base}/tables/{second['tables'][0]['id']}", json={"name": "renamed"})
+    assert r.status_code == 409 and r.json()["error"]["code"] == "proposal_not_draft"
+
+
 def test_rejected_fd_changes_design(client, fee_ws_clean):
     client.post("/api/auth/login", json=FIXTURE_LOGIN)
     base = f"/api/workspaces/{fee_ws_clean.id}"
@@ -328,9 +386,14 @@ def test_rejected_fd_changes_design(client, fee_ws_clean):
         fd = next(f for f in fds if f["lhs"] == lhs and f["rhs"] == rhs)
         assert client.patch(f"{base}/fds/{fd['id']}", json={"accepted": False}).status_code == 200
 
-    # Rejecting batch -> teacher alone changes nothing: the accepted batch -> teacher_phone together with
-    # teacher_phone -> teacher still implies it, so batches keeps its teacher.
+    # The design is built from the accepted, non-derived dependencies (the list shown by default).
+    # Rejecting batch -> teacher makes batch -> teacher_phone (derived until now) part of that list, and
+    # with teacher_phone -> teacher it still gives every batch one teacher: batches stays, and the user
+    # sees the dependency that keeps it.
     reject(["batch"], "teacher")
+    shown = {(tuple(f["lhs"]), f["rhs"]) for f in client.get(f"{base}/analysis").json()["fds"]
+             if f["is_exact"] and f["accepted"] and not f["is_derived"]}
+    assert (("batch",), "teacher_phone") in shown and (("batch",), "teacher") not in shown
     p = client.post(f"{base}/proposal").json()
     assert {t["name"]: [c["name"] for c in t["columns"]] for t in p["tables"]}["batches"] == [
         "id", "batch", "teacher_id"]

@@ -74,11 +74,16 @@ def test_email_must_be_lowercase(conn):
             "INSERT INTO qlens.users (email, password_hash, display_name) VALUES ('A@x.com', 'h', 'Ada')")
 
 
-def test_only_one_live_proposal_per_dataset(conn):
+def test_one_draft_and_one_applied_proposal_per_dataset(conn):
     ds = _dataset(conn)
     _proposal(conn, ds, "draft")
     _expect(conn, errors.UniqueViolation,
             "INSERT INTO qlens.schema_proposals (dataset_id, status) VALUES (%s, 'draft')", (ds,))
+    # The applied design stays applied while a new draft is edited.
+    _proposal(conn, ds, "applied", lossless_ok=True)
+    _expect(conn, errors.UniqueViolation,
+            "INSERT INTO qlens.schema_proposals (dataset_id, status, lossless_ok) VALUES (%s, 'applied', true)",
+            (ds,))
     # Superseded proposals are history and may pile up.
     _proposal(conn, ds, "superseded")
     _proposal(conn, ds, "superseded")
@@ -193,6 +198,8 @@ def test_workspace_summary_with_dataset(conn):
     prop = _proposal(conn, ds, "applied", lossless_ok=True)
     _proposed_table(conn, prop, 1, "a")
     _proposed_table(conn, prop, 2, "b")
+    draft = _proposal(conn, ds, "draft")          # a draft next to the applied design is not counted
+    _proposed_table(conn, draft, 1, "a")
     _run(conn, ws, 5)
     row = conn.execute("SELECT * FROM qlens.v_workspace_summary WHERE workspace_id=%s", (ws,)).fetchone()
     assert (row["stage"], row["row_count"], row["column_count"]) == ("applied", 50, 4)

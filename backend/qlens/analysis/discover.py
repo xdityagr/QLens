@@ -224,8 +224,10 @@ def load_fds(conn: psycopg.Connection, dataset_id: int, fd_id: int | None = None
 
 
 def to_algebra(fds: list[FDOut]) -> list[FD]:
-    """Exact and accepted dependencies, in the form the 3NF synthesis consumes."""
-    return [FD(frozenset(f.lhs), f.rhs) for f in fds if f.is_exact and f.accepted]
+    """The dependencies the design is built from, in the form the 3NF synthesis consumes: exactly the
+    exact, accepted, non-derived ones (the list the UI shows by default). A derived dependency is implied
+    by these, so leaving it out never changes their closure."""
+    return [FD(frozenset(f.lhs), f.rhs) for f in fds if f.is_exact and f.accepted and not f.is_derived]
 
 
 def get_analysis(conn: psycopg.Connection, dataset_id: int) -> AnalysisOut:

@@ -81,6 +81,16 @@ def _and(items: list[str]) -> str:
     return items[0] if len(items) == 1 else f"{', '.join(items[:-1])} and {items[-1]}"
 
 
+def _fact_explanation(key_labels: list[str], refs: list[str]) -> str:
+    text = "One row per original sheet row"
+    if key_labels:
+        text += f", identified by {' + '.join(key_labels)}"
+    text += "."
+    if refs:
+        text += f" It points to {_and(refs)} instead of repeating their details."
+    return text
+
+
 def _plan(relations: list[Relation], cols: list[dict], keys: list[tuple[str, ...]], filename: str) -> list[_Table]:
     info = {c["name"]: c for c in cols}
     ordinal = {c["name"]: i for i, c in enumerate(cols)}
@@ -145,13 +155,8 @@ def _plan(relations: list[Relation], cols: list[dict], keys: list[tuple[str, ...
         if r.is_fact:
             # A natural key only when the data proved it unique (a stored candidate key).
             tkeys = [as_columns(r.determinant)] if r.determinant and frozenset(r.determinant) in key_sets else []
-            text = "One row per original sheet row"
-            if tkeys:
-                text += f", identified by {' + '.join(label(a) for a in r.determinant)}"
-            text += "."
-            refs = [names[c.ref] for c in columns if c.role == "fk"]
-            if refs:
-                text += f" It points to {_and(refs)} instead of repeating their details."
+            text = _fact_explanation([label(a) for a in r.determinant] if tkeys else [],
+                                     [names[c.ref] for c in columns if c.role == "fk"])
         else:
             tkeys = []
             for k in [r.determinant, *r.equivalents]:
@@ -177,7 +182,9 @@ def _keys(conn: psycopg.Connection, dataset_id: int) -> list[tuple[str, ...]]:
 
 
 def build(conn: psycopg.Connection, dataset_id: int) -> ProposalOut:
-    """Synthesize a fresh draft from the exact, accepted dependencies; it replaces the live proposal."""
+    """Synthesize a fresh draft from the exact, accepted dependencies; it replaces the current draft.
+
+    An applied proposal stays applied (its tables still exist) until a newer one is applied."""
     ds = conn.execute("SELECT original_filename, status FROM qlens.datasets WHERE id = %s", (dataset_id,)).fetchone()
     if ds is None:
         raise ApiError(404, "no_dataset", "This workspace has no dataset yet.")
@@ -193,10 +200,8 @@ def build(conn: psycopg.Connection, dataset_id: int) -> ProposalOut:
     column_id = {c["name"]: c["id"] for c in cols}
 
     with conn.transaction():
-        # Only one live proposal per dataset (schema_proposals_one_live_idx), so the new draft also
-        # replaces an applied one; the applied tables themselves stay until the next apply.
         conn.execute("UPDATE qlens.schema_proposals SET status = 'superseded' "
-                     "WHERE dataset_id = %s AND status <> 'superseded'", (dataset_id,))
+                     "WHERE dataset_id = %s AND status = 'draft'", (dataset_id,))
         pid = conn.execute("INSERT INTO qlens.schema_proposals (dataset_id, status) VALUES (%s, 'draft') "
                            "RETURNING id", (dataset_id,)).fetchone()["id"]
         table_ids = [conn.execute(
@@ -264,6 +269,16 @@ def get_proposal(conn: psycopg.Connection, proposal_id: int) -> ProposalOut:
     for c in columns:
         if c["role"] == "fk":
             c["source_label"] = natural_label(c["references_table_id"])
+    # The fact's explanation names other tables, so it is rendered from their current names (the stored
+    # text is the one from build time). Entity explanations use only spreadsheet headers, which renames
+    # do not touch, so the stored text stays right.
+    name_of = {t["id"]: t["name"] for t in tables}
+    for t in tables:
+        if t["kind"] == "fact":
+            label_of = {c["name"]: c["source_label"] for c in cols_of[t["id"]]}
+            t["explanation"] = _fact_explanation(
+                [label_of[n] for n in keys_of[t["id"]][0]] if keys_of[t["id"]] else [],
+                [name_of[c["references_table_id"]] for c in cols_of[t["id"]] if c["role"] == "fk"])
     return ProposalOut(
         id=p["id"], status=p["status"], lossless_ok=p["lossless_ok"], source_columns=source_columns,
         tables=[TableOut(**t, unique_keys=keys_of[t["id"]],
@@ -273,8 +288,9 @@ def get_proposal(conn: psycopg.Connection, proposal_id: int) -> ProposalOut:
 
 
 def live_proposal(conn: psycopg.Connection, dataset_id: int) -> ProposalOut | None:
-    row = conn.execute("SELECT id FROM qlens.schema_proposals WHERE dataset_id = %s AND status <> 'superseded'",
-                       (dataset_id,)).fetchone()
+    """The draft being edited if there is one, else the applied proposal."""
+    row = conn.execute("SELECT id FROM qlens.schema_proposals WHERE dataset_id = %s AND status <> 'superseded' "
+                       "ORDER BY status = 'draft' DESC LIMIT 1", (dataset_id,)).fetchone()
     return None if row is None else get_proposal(conn, row["id"])
 
 
@@ -286,14 +302,22 @@ def _check_identifier(name: str) -> None:
                        "Use lower-case letters, digits and underscores, starting with a letter (at most 63).")
 
 
+def _check_draft(status: str) -> None:
+    # An applied proposal describes tables that exist; renaming it would make the two disagree.
+    if status != "draft":
+        raise ApiError(409, "proposal_not_draft", "Only the current draft can be renamed; build a new design first.")
+
+
 def rename_table(conn: psycopg.Connection, dataset_id: int, table_id: int, name: str) -> ProposalOut:
     _check_identifier(name)
     t = conn.execute(
-        "SELECT t.id, t.proposal_id FROM qlens.proposed_tables t JOIN qlens.schema_proposals p ON p.id = t.proposal_id "
-        "WHERE t.id = %s AND p.dataset_id = %s AND p.status <> 'superseded' FOR UPDATE OF t",
+        "SELECT t.id, t.proposal_id, p.status FROM qlens.proposed_tables t "
+        "JOIN qlens.schema_proposals p ON p.id = t.proposal_id "
+        "WHERE t.id = %s AND p.dataset_id = %s FOR UPDATE OF t",
         (table_id, dataset_id)).fetchone()
     if t is None:
         raise ApiError(404, "table_not_found", "Table not found.")
+    _check_draft(t["status"])
     clash = conn.execute("SELECT 1 FROM qlens.proposed_tables WHERE proposal_id = %s AND name = %s AND id <> %s",
                          (t["proposal_id"], name, table_id)).fetchone()
     if clash is not None or name == VIEW_NAME:
@@ -305,12 +329,13 @@ def rename_table(conn: psycopg.Connection, dataset_id: int, table_id: int, name:
 def rename_column(conn: psycopg.Connection, dataset_id: int, column_id: int, name: str) -> ProposalOut:
     _check_identifier(name)
     c = conn.execute(
-        "SELECT c.id, c.table_id, t.proposal_id FROM qlens.proposed_columns c "
+        "SELECT c.id, c.table_id, t.proposal_id, p.status FROM qlens.proposed_columns c "
         "JOIN qlens.proposed_tables t ON t.id = c.table_id JOIN qlens.schema_proposals p ON p.id = t.proposal_id "
-        "WHERE c.id = %s AND p.dataset_id = %s AND p.status <> 'superseded' FOR UPDATE OF c",
+        "WHERE c.id = %s AND p.dataset_id = %s FOR UPDATE OF c",
         (column_id, dataset_id)).fetchone()
     if c is None:
         raise ApiError(404, "column_not_found", "Column not found.")
+    _check_draft(c["status"])
     clash = conn.execute("SELECT 1 FROM qlens.proposed_columns WHERE table_id = %s AND name = %s AND id <> %s",
                          (c["table_id"], name, column_id)).fetchone()
     if clash is not None:

@@ -16,7 +16,15 @@ from qlens.design import naming
 from qlens.design.proposal import VIEW_NAME, ProposalOut, ProposedColumnOut, TableOut
 
 _TYPES = {"bigint", "numeric", "boolean", "date", "text"}
-_ID = sql.Identifier
+
+
+class _ID(sql.Identifier):
+    """A (possibly schema-qualified) identifier that keeps its plain name parts, so as_text can quote them
+    only where needed. Executed statements quote it like any sql.Identifier."""
+
+    def __init__(self, *names: str):
+        super().__init__(*names)
+        self.names = names
 
 
 @dataclass(frozen=True)
@@ -233,8 +241,8 @@ def render(proposal: ProposalOut, ws_id: int) -> list[SqlStep]:
 # ---- readable text --------------------------------------------------------------------------------
 
 def _identifiers(part: sql.Composable, out: set[str]) -> None:
-    if isinstance(part, sql.Identifier):
-        out.update(part._obj)                        # the name parts (psycopg keeps them unquoted here)
+    if isinstance(part, _ID):
+        out.update(part.names)
     elif isinstance(part, sql.Composed):
         for p in part:
             _identifiers(p, out)
@@ -250,8 +258,8 @@ def as_text(steps: Sequence[SqlStep], conn: psycopg.Connection) -> str:
         quoted = dict(cur.execute("SELECT n, quote_ident(n) FROM unnest(%s::text[]) AS n", (sorted(names),)))
 
     def text(part: sql.Composable) -> str:
-        if isinstance(part, sql.Identifier):
-            return ".".join(quoted[n] for n in part._obj)
+        if isinstance(part, _ID):
+            return ".".join(quoted[n] for n in part.names)
         if isinstance(part, sql.Composed):
             return "".join(text(p) for p in part)
         return part.as_string(conn)

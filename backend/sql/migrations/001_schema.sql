@@ -204,10 +204,14 @@ CREATE TABLE qlens.schema_proposals (
     mismatch_rows      integer CHECK (mismatch_rows >= 0),
     CHECK (status <> 'applied' OR lossless_ok IS TRUE)   -- IS TRUE: NULL (not checked) must not pass
 );
--- At most one live (draft or applied) proposal per dataset, any number of superseded ones.
--- Also serves "the current proposal of this dataset" and the cascade from datasets.
-CREATE UNIQUE INDEX schema_proposals_one_live_idx
-    ON qlens.schema_proposals (dataset_id) WHERE status <> 'superseded';
+-- At most one draft and one applied proposal per dataset (the applied design stays applied while
+-- a new draft is edited), any number of superseded ones.
+-- Serves "the draft of this dataset" (the proposal the user is editing).
+CREATE UNIQUE INDEX schema_proposals_one_draft_idx
+    ON qlens.schema_proposals (dataset_id) WHERE status = 'draft';
+-- Serves "the applied proposal of this dataset" (v_workspace_summary.table_count, the schema catalog).
+CREATE UNIQUE INDEX schema_proposals_one_applied_idx
+    ON qlens.schema_proposals (dataset_id) WHERE status = 'applied';
 
 CREATE TABLE qlens.proposed_tables (
     id          bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
