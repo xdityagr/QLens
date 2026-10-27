@@ -50,8 +50,7 @@ wrong choice shows up in the deploy log instead of as a broken workspace later.
 
 ## Deploy on Render (Blueprint)
 
-1. Push this branch to GitHub (Render deploys from a Git host). The Blueprint deploys the branch you pick when you create
-   it; pick `build/qlens` or merge into `main` first.
+1. The code is on GitHub (`main` branch of the repository). Render deploys that branch.
 2. Render dashboard > **New > Blueprint** > connect the repository. Render reads `render.yaml` and proposes a web
    service `qlens` (Docker, free) and a database `qlens-db` (Postgres, free).
 3. When asked for `GEMINI_API_KEY`, paste a key from <https://aistudio.google.com/apikey> or leave it empty.
