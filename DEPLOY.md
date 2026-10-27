@@ -44,25 +44,36 @@ wrong choice shows up in the deploy log instead of as a broken workspace later.
 
 | Provider | Free tier | Notes |
 | --- | --- | --- |
-| **Render Postgres** | yes, but it expires (see caveats) | Simplest: declared in `render.yaml` and connected over Render's private network. Run the check above first (Render dashboard > database > Connect, then `psql` with the External URL). If it returns `false`, use Neon. |
-| **Neon** | yes, no expiry | The default owner role belongs to `neon_superuser`, which has CREATEROLE. Use the **direct** connection string (host without `-pooler`): the pooled endpoint does not accept the per-connection `search_path` option the sandbox sends. Keep `?sslmode=require`. |
+| **Render Postgres** | yes, but it expires | **Not usable on the free plan**: Render's managed users cannot run `CREATE ROLE` (users are managed only through the Render dashboard/API). |
+| **Neon (used by `render.yaml`)** | yes, no expiry | The default owner role belongs to `neon_superuser`, which has CREATEROLE. Use the **direct** connection string (host without `-pooler`): the pooled endpoint does not accept the per-connection `search_path` option the sandbox sends. Keep `?sslmode=require`. |
 | **Supabase** | yes | The `postgres` user has CREATEROLE, but the direct host is IPv6-only on the free plan and the poolers expect user names of the form `role.projectref`, which the per-workspace roles do not have. Not recommended without the paid IPv4 add-on. |
 
 ## Deploy on Render (Blueprint)
 
-1. The code is on GitHub (`main` branch of the repository). Render deploys that branch.
-2. Render dashboard > **New > Blueprint** > connect the repository. Render reads `render.yaml` and proposes a web
-   service `qlens` (Docker, free) and a database `qlens-db` (Postgres, free).
-3. When asked for `GEMINI_API_KEY`, paste a key from <https://aistudio.google.com/apikey> or leave it empty.
+1. Create the Neon database first (next section) and copy its direct connection string.
+2. The code is on GitHub (`main` branch of the repository). Render deploys that branch.
+3. Render dashboard > **New > Blueprint** > connect the repository. Render reads `render.yaml` and proposes a web
+   service `qlens` (Docker, free). Paste the Neon string for `DATABASE_URL`, and for `GEMINI_API_KEY` a key from
+   <https://aistudio.google.com/apikey> (or leave it empty).
 4. **Apply**. The first build takes a few minutes (Node build of the web app, then the Python image). The deploy log
    should end with `cloud_init: database ready (9 migration(s) applied ...)` and uvicorn listening.
 5. Open `https://<service>.onrender.com`. `/api/health` should return `{"ok": true, "db": true}`.
 
-### Using Neon instead of Render Postgres
+### Creating the Neon database (do this first)
 
-Create a Neon project, copy the direct connection string, then in `render.yaml` delete the `fromDatabase` block and the
-`databases:` section and uncomment the `DATABASE_URL` / `sync: false` lines. Create the Blueprint as above and paste the
-Neon URL when asked. (Or create the web service by hand: New > Web Service > Docker, and add the variables from the table.)
+1. Sign up at <https://neon.tech> (free) > **New project**: Postgres 18 (or the newest offered), region close to your
+   Render region (e.g. AWS Singapore for Render Singapore), database name `qlens`.
+2. **Connect** > choose the database `qlens` and the default owner role > turn **Connection pooling OFF** > copy the
+   connection string. It looks like
+   `postgresql://<owner>:<password>@ep-xxxx-xxxx.<region>.aws.neon.tech/qlens?sslmode=require` - the host must **not**
+   contain `-pooler`.
+3. Optional check in Neon's SQL Editor: `SELECT rolcreaterole FROM pg_roles WHERE rolname = current_user;` returns `true`.
+4. Paste that string as `DATABASE_URL` when the Blueprint asks, or in Render > `qlens` > **Environment** for an existing
+   service, then **Save** (Render redeploys). On start, `cloud_init` creates the `qlens` schema and the `pg_trgm`
+   extension and applies all migrations.
+
+If you created the Blueprint earlier with a Render Postgres `qlens-db`: set `DATABASE_URL` on the `qlens` service to the
+Neon URL as above, then delete `qlens-db` in the Render dashboard (it is no longer referenced by `render.yaml`).
 
 ### Setting or changing GEMINI_API_KEY later
 
@@ -78,12 +89,10 @@ Render dashboard > `qlens` > **Environment** > add or edit `GEMINI_API_KEY` > Sa
 - **The web service sleeps.** A free Render web service stops after about 15 minutes without traffic. The next visit
   starts it again, which takes roughly a minute (the first request may time out; reload). Wake it a few minutes before
   a demo by opening `/api/health`.
-- **Render free Postgres expires** about 30 days after it is created (check Render's current terms); after a grace
-  period it is deleted with its data. Upgrade it, or use Neon, for anything that must last.
 - **Neon free compute suspends** after a few idle minutes; the first query afterwards takes a moment longer.
 - **Small connection limits.** Each running query opens one extra connection as the workspace role (at most 3 per
   workspace). That is fine for a demo; lower `DB_POOL_MAX` if the provider's limit is tight.
-- **Gemini free tier** allows only a small number of requests per day; when it runs out the app says so.
+- **Gemini free tier** is rate-limited per minute and per day; when it is hit the app says so (wait about a minute).
 
 ## Running the image locally
 

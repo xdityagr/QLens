@@ -1,4 +1,4 @@
-# Render Blueprint for QLens: one Docker web service and one Render Postgres database, both on the free plan.
+# Render Blueprint for QLens: one Docker web service on the free plan; the database is an external Neon Postgres.
 # Use it from the Render dashboard: New > Blueprint > pick this repository. See DEPLOY.md.
 services:
   - type: web
@@ -10,16 +10,11 @@ services:
     healthCheckPath: /api/health
     autoDeploy: true
     envVars:
-      # Option A (default): the Render Postgres database declared below, over Render's private network.
+      # The database is external (Neon, free, no expiry): Render's free Postgres cannot run CREATE ROLE, which QLens
+      # needs for its per-workspace roles. Paste Neon's DIRECT connection string (host without "-pooler", keep
+      # ?sslmode=require) when the Blueprint asks for it, or later under qlens > Environment. See DEPLOY.md.
       - key: DATABASE_URL
-        fromDatabase:
-          name: qlens-db
-          property: connectionString
-      # Option B: an external database such as Neon. Delete option A above (and the `databases:` section
-      # below), uncomment these two lines, and paste the URL in the dashboard when the Blueprint asks for it.
-      # Use the direct (not "-pooler") connection string and keep its ?sslmode=require.
-      # - key: DATABASE_URL
-      #   sync: false
+        sync: false
       - key: SECRET_KEY
         # Generated once and then kept. Workspace role passwords are derived from it, so never change it
         # on a live database: existing workspaces would stop being able to log in.
@@ -36,10 +31,3 @@ services:
       # - key: GEMINI_MODEL
       #   value: gemini-3.5-flash
 
-databases:
-  - name: qlens-db
-    plan: free
-    databaseName: qlens
-    user: qlens_app
-    # Reachable only from Render services in the same region, not from the internet.
-    ipAllowList: []
