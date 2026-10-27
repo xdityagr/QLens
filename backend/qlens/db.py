@@ -6,6 +6,7 @@ from typing import Annotated, Literal
 import psycopg
 from fastapi import Depends
 from psycopg import sql
+from psycopg.conninfo import conninfo_to_dict
 from psycopg.rows import dict_row
 from psycopg_pool import ConnectionPool
 
@@ -23,7 +24,7 @@ def open_pool() -> ConnectionPool:
         get_settings().database_url,
         kwargs={"row_factory": dict_row},
         min_size=1,
-        max_size=10,
+        max_size=get_settings().db_pool_max,
         open=False,
     )
     pool.open(wait=False)
@@ -70,6 +71,21 @@ def ws_role(ws_id: int) -> str:
 def ws_password(ws_id: int) -> str:
     """Derived, not stored: the app can always recompute it from SECRET_KEY."""
     return hmac.new(get_settings().secret_key.encode(), f"ws:{ws_id}".encode(), hashlib.sha256).hexdigest()
+
+
+def ws_conn_params(ws_id: int, search_path: str | None = None, **extra) -> dict:
+    """Keyword arguments for psycopg.connect() as the workspace's own LOGIN role.
+
+    Same host, port, database and TLS settings (sslmode, sslrootcert, channel_binding...) as DATABASE_URL;
+    only the user and password differ. A search_path is added to any startup `options` the URL already
+    carries (some hosts put their own there), and `extra` (connect_timeout, ...) overrides the URL.
+    """
+    params = conninfo_to_dict(get_settings().database_url)
+    params.update(user=ws_role(ws_id), password=ws_password(ws_id))
+    if search_path:
+        params["options"] = " ".join(filter(None, [params.get("options"), f"-c search_path={search_path}"]))
+    params.update(extra)
+    return params
 
 
 def ws_schema(ws_id: int, kind: SchemaKind) -> str:

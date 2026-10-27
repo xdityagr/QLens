@@ -9,12 +9,16 @@ from qlens.config import get_settings
 router = APIRouter(prefix="/auth", tags=["auth"])
 
 
+def _cookie_flags() -> dict:
+    # Lax and not Secure for local http dev; COOKIE_SECURE=true behind HTTPS. SameSite=None (a frontend on
+    # another site calling this API directly) is only accepted by browsers together with Secure.
+    s = get_settings()
+    return {"httponly": True, "samesite": s.cookie_samesite, "secure": s.cookie_is_secure, "path": "/"}
+
+
 def _set_cookie(response: Response, token: str) -> None:
-    response.set_cookie(
-        service.SESSION_COOKIE, token,
-        max_age=get_settings().session_days * 86400,
-        httponly=True, samesite="lax", path="/",
-    )
+    response.set_cookie(service.SESSION_COOKIE, token, max_age=get_settings().session_days * 86400,
+                        **_cookie_flags())
 
 
 @router.post("/signup", status_code=201)
@@ -37,7 +41,7 @@ def logout(request: Request, conn: db.Conn) -> Response:
     if token:
         service.delete_session(conn, token)
     response = Response(status_code=204)
-    response.delete_cookie(service.SESSION_COOKIE, path="/", httponly=True, samesite="lax")
+    response.delete_cookie(service.SESSION_COOKIE, **_cookie_flags())
     return response
 
 

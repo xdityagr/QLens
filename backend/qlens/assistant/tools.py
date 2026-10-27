@@ -26,7 +26,6 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError
 from qlens import db
 from qlens.analysis import cleanup, discover
 from qlens.analysis.fd_algebra import closure
-from qlens.config import get_settings
 from qlens.design import catalog, proposal
 from qlens.design.proposal import ProposalOut
 from qlens.errors import ApiError
@@ -305,11 +304,9 @@ def explain_query(ctx: ToolContext, a: SqlArgs) -> tuple[dict, str]:
     # The same sandbox as sandbox.run (workspace role, read-only transaction, statement timeout); plain
     # EXPLAIN plans the query without running it.
     # TODO: reuse the sandbox's explain helper (explain_analyze work in query/sandbox.py) once it is committed.
-    s = get_settings()
     try:
-        conn = psycopg.connect(host=s.pg_host, port=s.pg_port, dbname=s.pg_dbname, user=db.ws_role(ctx.ws_id),
-                               password=db.ws_password(ctx.ws_id), connect_timeout=5,
-                               options=f"-c search_path={db.ws_schema(ctx.ws_id, 'main')},{db.ws_schema(ctx.ws_id, 'src')}")
+        search_path = f"{db.ws_schema(ctx.ws_id, 'main')},{db.ws_schema(ctx.ws_id, 'src')}"
+        conn = psycopg.connect(**db.ws_conn_params(ctx.ws_id, search_path, connect_timeout=5))
     except psycopg.Error as e:
         log.warning("explain_query: sandbox connection failed: %s", e)
         raise ToolError("db_error", "The database is not reachable right now.") from None

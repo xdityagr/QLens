@@ -14,6 +14,7 @@ from qlens.ingest.routes import router as ingest_router
 from qlens.perf.routes import router as perf_router
 from qlens.query.routes import router as query_router
 from qlens.stepthrough.routes import router as stepthrough_router
+from qlens.web import mount_frontend
 from qlens.workspaces.routes import router as workspaces_router
 
 
@@ -57,3 +58,7 @@ router.include_router(data_router)
 router.include_router(perf_router)
 router.include_router(stepthrough_router)
 app.include_router(router)
+
+# Last, so its catch-all route only sees paths the API did not match.
+if get_settings().is_production:
+    mount_frontend(app, get_settings().frontend_dist)

@@ -18,7 +18,6 @@ from psycopg.pq import Format
 from pydantic import BaseModel
 
 from qlens import db
-from qlens.config import get_settings
 from qlens.query.serialize import cell
 
 MAX_TIMEOUT_MS = 5000
@@ -92,13 +91,10 @@ def _error(e: psycopg.Error, started: float, prefix_len: int = 0) -> QueryError:
 
 def _connect(ws_id: int, target: Literal["main", "lab"]) -> psycopg.Connection:
     """A fresh connection as the workspace's own LOGIN role, seeing only the target schema (and _src)."""
-    settings = get_settings()
     # Startup options outrank the role's ALTER ROLE ... SET search_path, which only knows the main schema.
     search_path = f"{db.ws_schema(ws_id, target)},{db.ws_schema(ws_id, 'src')}"
     try:
-        return psycopg.connect(host=settings.pg_host, port=settings.pg_port, dbname=settings.pg_dbname,
-                               user=db.ws_role(ws_id), password=db.ws_password(ws_id),
-                               connect_timeout=5, prepare_threshold=5, options=f"-c search_path={search_path}")
+        return psycopg.connect(**db.ws_conn_params(ws_id, search_path, connect_timeout=5), prepare_threshold=5)
     except psycopg.Error as e:
         # Never echo str(e): connection errors name the host, port and role.
         if e.sqlstate == "53300":  # too_many_connections: the role's CONNECTION LIMIT

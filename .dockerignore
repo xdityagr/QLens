@@ -1,0 +1,27 @@
+# Only backend/ and frontend/ sources go into the image; never secrets, local data or build output.
+.git
+.gitignore
+**/.env
+**/.env.*
+backend/.pgdata
+backend/.venv
+backend/.pytest_cache
+backend/tests
+**/__pycache__
+**/*.pyc
+**/node_modules
+frontend/dist
+report
+Samples
+Screenshots
+cheatsheet
+docs
+scripts
+*.pdf
+*.docx
+*.jpg
+Dockerfile
+.dockerignore
+render.yaml
+DEPLOY.md
+README.md

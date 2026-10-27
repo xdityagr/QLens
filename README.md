@@ -86,6 +86,11 @@ Do not run two `pytest` sessions at once: they share the `qlens_test` schema.
    **Step through** to see each clause's intermediate result. Run an `UPDATE` and confirm it in the dialog.
 6. **Data > Ask AI** (needs the key; otherwise it explains why it is off), then **History** to show saved and past runs.
 
+## Deploying
+
+`DEPLOY.md` covers the cloud setup: a Docker image that serves the API and the built web app from one origin,
+`python -m qlens.cloud_init` to prepare a managed database, and a Render Blueprint (`render.yaml`).
+
 ## Troubleshooting
 
 - **Port 5544 in use / cluster will not start.** Run `uv run python -m qlens.pg_local status`. If another process holds 5544,
